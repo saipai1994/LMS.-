@@ -1,5 +1,6 @@
 /** The browser talks to same-origin /api/*, proxied to the NestJS API (no CORS, no API URL in client code). */
-const API = process.env.API_URL ?? 'http://localhost:3001';
+const RAW = process.env.API_URL ?? 'http://localhost:3001';
+const API = /^https?:\/\//.test(RAW) ? RAW : `http://${RAW}`; // Render's fromService gives host:port
 export default {
   reactStrictMode: true,
   poweredByHeader: false,

@@ -6,3 +6,7 @@
 - The app role must own the schema and is subject to forced RLS. Back up with a separate BYPASSRLS role (see `scripts/backup-restore-check.sh`).
 - `apps/api/Dockerfile`, `apps/web/Dockerfile`, `docker-compose.yml`, `.github/workflows/ci.yml` exist but **have not been built/run**.
 - Run a single API instance until the rate limiter and scheduler move out of process. Terminate TLS in front of the app.
+
+## Render (demo)
+`render.yaml` is a Blueprint for a **demo** deployment (Postgres + API + web, `DEMO_MODE=true`, seeds Greenwood on every start; seeding is idempotent). In Render: New → Blueprint → select this repo/branch. Then open the `lms-web` URL and sign in per the README.
+Not verified on Render (no access from the dev sandbox): the API and web builds pass locally, the Blueprint itself has never been applied. Free-tier caveats: Postgres expires after ~30 days, services sleep when idle (slow first load), uploaded files are on ephemeral disk. Do not use for real student data.
