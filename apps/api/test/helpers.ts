@@ -12,7 +12,7 @@ export async function bootApp(): Promise<INestApplication> {
   if (!process.env.DATABASE_URL.includes('lms_test')) throw new Error('Tests must run against a *_test database');
   process.env.PLATFORM_BOOTSTRAP_TOKEN = PLATFORM_TOKEN;
   const mod = await Test.createTestingModule({ imports: [AppModule] }).compile();
-  const app = mod.createNestApplication();
+  const app = mod.createNestApplication({ rawBody: true });
   const db = app.get(DbService);
   await db.pool.query('drop schema public cascade; create schema public;'); // test database only
   await db.migrate();

@@ -14,7 +14,7 @@ export class DemoController {
     return {
       demo: true, banner: 'DEMO — fictional data; payments, messaging, GPS and AI are not connected',
       tenant: DEMO_SLUG, password: DEMO_PASSWORD, accounts,
-      mfa: 'admin, principal, admissions and nurse require a TOTP code: run `npm run demo:code`',
+      mfa: 'admin, principal, admissions, accountant and nurse require a TOTP code: run `npm run demo:code`',
     };
   }
 }

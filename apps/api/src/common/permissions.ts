@@ -7,11 +7,12 @@ export const PERMISSIONS = [
   'hostel.manage', 'hostel.read', 'leave.approve', 'gate.record', 'rollcall.record',
   'incident.report', 'incident.manage', 'safeguarding.manage',
   'attendance.manage', 'attendance.read', 'dismissal.record',
+  'finance.manage', 'finance.read', 'finance.approve',
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
 /** Permissions that make an account "privileged" and therefore require MFA. */
-export const PRIVILEGED: Permission[] = ['tenant.manage', 'campus.manage', 'user.manage', 'role.manage', 'audit.read', 'admissions.enroll', 'medical.read', 'medical.write', 'safeguarding.manage'];
+export const PRIVILEGED: Permission[] = ['tenant.manage', 'campus.manage', 'user.manage', 'role.manage', 'audit.read', 'admissions.enroll', 'medical.read', 'medical.write', 'safeguarding.manage', 'finance.approve', 'finance.manage'];
 
 export interface SystemRole { key: string; name: string; permissions: Permission[] }
 const ALL = [...PERMISSIONS];
@@ -19,10 +20,10 @@ const ALL = [...PERMISSIONS];
 export const SYSTEM_ROLES: SystemRole[] = [
   { key: 'group_admin', name: 'School group administrator', permissions: ALL },
   { key: 'campus_admin', name: 'Campus administrator', permissions: ALL.filter((p) => p !== 'tenant.manage' && p !== 'safeguarding.manage') },
-  { key: 'principal', name: 'Principal', permissions: ['academic.read', 'admissions.read', 'student.read', 'course.read_all', 'audit.read', 'hostel.read', 'incident.manage', 'attendance.read'] },
+  { key: 'principal', name: 'Principal', permissions: ['academic.read', 'admissions.read', 'student.read', 'course.read_all', 'audit.read', 'hostel.read', 'incident.manage', 'attendance.read', 'finance.read', 'finance.approve'] },
   { key: 'admissions_officer', name: 'Admissions officer', permissions: ['academic.read', 'admissions.read', 'admissions.write', 'admissions.decide', 'admissions.enroll', 'student.read'] },
   { key: 'registrar', name: 'Registrar', permissions: ['academic.manage', 'academic.read', 'student.read', 'student.write', 'admissions.read', 'attendance.manage', 'attendance.read'] },
-  { key: 'accountant', name: 'Accountant', permissions: [] },
+  { key: 'accountant', name: 'Accountant', permissions: ['student.read', 'finance.manage', 'finance.read', 'academic.read'] },
   { key: 'teacher', name: 'Teacher and class teacher', permissions: ['academic.read', 'incident.report'] },
   { key: 'exam_coordinator', name: 'Examination coordinator', permissions: ['academic.read'] },
   { key: 'lms_admin', name: 'LMS administrator', permissions: ['academic.read', 'course.manage', 'course.read_all'] },

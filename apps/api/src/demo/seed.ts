@@ -44,7 +44,7 @@ export async function seedDemo(db: DbService): Promise<SeedResult> {
     }
     await q(`insert into document_sequences(tenant_id, key, prefix, next_value) values ($1,'student_admission_no','GIA-',1)`, [t.id]);
 
-    const PRIV = new Set(['group_admin', 'campus_admin', 'principal', 'admissions_officer', 'nurse']);
+    const PRIV = new Set(['group_admin', 'campus_admin', 'principal', 'admissions_officer', 'nurse', 'accountant']);
     const addUser = async (email: string, name: string, role: string, withCampus: boolean) => {
       const [u] = await q(`insert into users(tenant_id, email, full_name, status, password_hash, mfa_secret, mfa_enabled) values ($1,$2,$3,'active',$4,$5,$6) returning id`,
         [t.id, email, name, pwHash, PRIV.has(role) ? DEMO_MFA_SECRET : null, PRIV.has(role)]);

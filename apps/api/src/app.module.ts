@@ -15,11 +15,12 @@ import { IncidentsController } from './incidents/incidents.controller';
 import { AttendanceController } from './attendance/attendance.controller';
 import { DismissalController } from './dismissal/dismissal.controller';
 import { NotificationsController } from './notifications/notifications.controller';
+import { FinanceController } from './finance/finance.controller';
 import { ErrorFilter } from './common/errors.filter';
 
 @Global()
 @Module({
-  controllers: [AuthController, PlatformController, AcademicsController, AdmissionsController, StudentsController, UsersController, DemoController, HostelController, IncidentsController, AttendanceController, DismissalController, NotificationsController],
+  controllers: [AuthController, PlatformController, AcademicsController, AdmissionsController, StudentsController, UsersController, DemoController, HostelController, IncidentsController, AttendanceController, DismissalController, NotificationsController, FinanceController],
   providers: [DbService, AuthService, { provide: APP_GUARD, useClass: AuthGuard }, { provide: APP_FILTER, useClass: ErrorFilter }],
   exports: [DbService],
 })
