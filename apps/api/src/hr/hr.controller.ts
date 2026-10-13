@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { DbService, Tx } from '../db/db.service';
 import { Auth, AuthContext, campusScope, can, needs, parse, pid, uuid } from '../common/http';
 import { audit } from '../common/audit';
+import { postJournal } from '../common/gl';
 
 const profileS = z.object({ userId: uuid, campusId: uuid, employeeNo: z.string().min(2).max(30), designation: z.string().min(2).max(100), department: z.string().max(100).optional(), joinDate: z.string().date(), contractEnd: z.string().date().optional(), qualifications: z.string().max(500).optional() });
 const docS = z.object({ kind: z.string().min(2).max(60), reference: z.string().max(100).optional(), expiresOn: z.string().date().optional() });
@@ -165,9 +166,13 @@ export class HrController {
         if (r.status !== 'draft') throw new ConflictException({ error: 'not_draft' });
         if (r.created_by === a.userId) throw new UnprocessableEntityException({ error: 'cannot_approve_own_run' });
         await tx.query(`update payroll_runs set status = 'approved', approved_by = $2, approved_at = now() where id = $1`, [id, a.userId]);
+        const t = (await tx.query('select coalesce(sum(basic_minor + allowances_minor - absence_deduction_minor),0)::bigint gross, coalesce(sum(deductions_minor),0)::bigint ded, coalesce(sum(net_minor),0)::bigint net from payslips where run_id = $1', [id])).rows[0];
+        await postJournal(tx, a.tenantId, { memo: `Payroll ${r.month}`, source: 'payroll', sourceRef: id, postedBy: a.userId, lines: [{ account: '5000', debit: Number(t.gross) }, { account: '2100', credit: Number(t.net) }, { account: '2150', credit: Number(t.ded) }] });
       } else {
         if (r.status !== 'approved') throw new ConflictException({ error: 'not_approved' });
         await tx.query(`update payroll_runs set status = 'paid', paid_at = now() where id = $1`, [id]);   // records payment only; no bank integration is configured
+        const net = (await tx.query('select coalesce(sum(net_minor),0)::bigint n from payslips where run_id = $1', [id])).rows[0].n;
+        await postJournal(tx, a.tenantId, { memo: `Salary payment ${r.month}`, source: 'payroll_payment', sourceRef: id, postedBy: a.userId, lines: [{ account: '2100', debit: Number(net) }, { account: '1010', credit: Number(net) }] });
       }
       await audit(tx, a, a.tenantId, `payroll.${decision}`, 'payroll_run', id);
       return { status: decision === 'approve' ? 'approved' : 'paid' };

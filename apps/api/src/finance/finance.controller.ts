@@ -5,6 +5,7 @@ import { DbService, Tx } from '../db/db.service';
 import { Auth, AuthContext, campusScope, can, needs, parse, pid, Public, uuid } from '../common/http';
 import { audit } from '../common/audit';
 import { guardianUserIds, isGuardianOf, notify, studentAccess } from '../sis/access';
+import { CASH_BY_METHOD, INCOME_BY_HEAD, postJournal, reverseJournal } from '../common/gl';
 
 const money = z.number().int().positive().max(1_000_000_000_00); // minor units
 const headS = z.object({ code: z.string().min(1).max(30), name: z.string().min(1).max(100) });
@@ -162,6 +163,10 @@ export class FinanceController {
       await tx.query(`update invoices set status = 'void' where id = $1`, [id]);
       const remaining = Number(inv.total_minor) - Number(inv.adjusted_minor);
       if (remaining > 0) await tx.query(`insert into ledger_entries(tenant_id, student_id, kind, ref_id, credit_minor, description) values ($1,$2,'void',$3,$4,$5)`, [a.tenantId, inv.student_id, id, remaining, `Void ${inv.number}`]);
+      const je = await tx.query(`select id from journal_entries where source = 'invoice' and source_ref = $1`, [id]);
+      if (je.rowCount) await reverseJournal(tx, a.tenantId, je.rows[0].id, a.userId, `Void ${inv.number}`, `void-invoice:${id}`);
+      for (const adj of (await tx.query(`select a.id, e.id as entry_id from invoice_adjustments a join journal_entries e on e.source = 'adjustment' and e.source_ref = a.id::text where a.invoice_id = $1`, [id])).rows)
+        await reverseJournal(tx, a.tenantId, adj.entry_id, a.userId, `Void ${inv.number}: reverse adjustment`, `void-adj:${adj.id}`);
       await audit(tx, a, a.tenantId, 'finance.invoice_void', 'invoice', id);
       return { status: 'void' };
     });
@@ -175,7 +180,8 @@ export class FinanceController {
       const inv = await this.invoiceFor(tx, a, id, 'approve', true);
       if (inv.status === 'void') throw new ConflictException({ error: 'invoice_void' });
       if (b.amountMinor > Number(inv.outstanding_minor)) throw new UnprocessableEntityException({ error: 'exceeds_outstanding', outstandingMinor: Number(inv.outstanding_minor) });
-      await tx.query('insert into invoice_adjustments(tenant_id, invoice_id, amount_minor, reason, approved_by) values ($1,$2,$3,$4,$5)', [a.tenantId, id, b.amountMinor, b.reason, a.userId]);
+      const adj = (await tx.query('insert into invoice_adjustments(tenant_id, invoice_id, amount_minor, reason, approved_by) values ($1,$2,$3,$4,$5) returning id', [a.tenantId, id, b.amountMinor, b.reason, a.userId])).rows[0];
+      await postJournal(tx, a.tenantId, { memo: `Credit note on ${inv.number}: ${b.reason}`, source: 'adjustment', sourceRef: adj.id, postedBy: a.userId, lines: [{ account: '4900', debit: b.amountMinor }, { account: '1100', credit: b.amountMinor }] });
       await tx.query(`insert into ledger_entries(tenant_id, student_id, kind, ref_id, credit_minor, description) values ($1,$2,'credit_note',$3,$4,$5)`, [a.tenantId, inv.student_id, id, b.amountMinor, `Credit note on ${inv.number}: ${b.reason}`]);
       await audit(tx, a, a.tenantId, 'finance.credit_note', 'invoice', id, null, { amountMinor: b.amountMinor });
       return { credited: b.amountMinor };
@@ -254,6 +260,8 @@ export class FinanceController {
           left -= take;
         }
         await tx.query(`insert into ledger_entries(tenant_id, student_id, kind, ref_id, debit_minor, description) values ($1,$2,'refund',$3,$4,$5)`, [a.tenantId, r.student_id, id, r.amount_minor, `Refund: ${r.reason}`]);
+        const method = (await tx.query('select method from payments where id = $1', [r.payment_id])).rows[0].method;
+        await postJournal(tx, a.tenantId, { memo: `Refund: ${r.reason}`, source: 'refund', sourceRef: id, postedBy: a.userId, lines: [{ account: '1100', debit: Number(r.amount_minor) }, { account: CASH_BY_METHOD[method] ?? '1010', credit: Number(r.amount_minor) }] });
       }
       await audit(tx, a, a.tenantId, `finance.refund_${decision}`, 'refund', id, r.campus_id);
       return { decision };
@@ -496,7 +504,8 @@ export class FinanceController {
       const amt = Math.min(c.amount, remaining - 1);          // an invoice never drops to zero through discounts alone
       if (amt <= 0) continue;
       remaining -= amt;
-      await tx.query('insert into invoice_adjustments(tenant_id, invoice_id, amount_minor, reason, approved_by, source) values ($1,$2,$3,$4,$5,$6)', [a.tenantId, invoiceId, amt, c.reason, c.by, c.source]);
+      const adj = (await tx.query('insert into invoice_adjustments(tenant_id, invoice_id, amount_minor, reason, approved_by, source) values ($1,$2,$3,$4,$5,$6) returning id', [a.tenantId, invoiceId, amt, c.reason, c.by, c.source])).rows[0];
+      await postJournal(tx, a.tenantId, { memo: c.reason, source: 'adjustment', sourceRef: adj.id, postedBy: a.userId, lines: [{ account: '4900', debit: amt }, { account: '1100', credit: amt }] });
       await tx.query(`insert into ledger_entries(tenant_id, student_id, kind, ref_id, credit_minor, description) values ($1,$2,'credit_note',$3,$4,$5)`, [a.tenantId, studentId, invoiceId, amt, c.reason]);
     }
   }
@@ -508,6 +517,10 @@ export class FinanceController {
     let n = 1;
     for (const l of lines) await tx.query('insert into invoice_lines(tenant_id, invoice_id, line_no, description, head_id, amount_minor) values ($1,$2,$3,$4,$5,$6)', [a.tenantId, inv.id, n++, l.description, l.headId, l.amountMinor]);
     await tx.query(`insert into ledger_entries(tenant_id, student_id, kind, ref_id, debit_minor, description) values ($1,$2,'invoice',$3,$4,$5)`, [a.tenantId, studentId, inv.id, total, `Invoice ${number}`]);
+    const codes = new Map((await tx.query('select id, code from fee_heads')).rows.map((r) => [r.id as string, r.code as string]));
+    const income = new Map<string, number>();
+    for (const l of lines) { const acct = (l.headId && INCOME_BY_HEAD[codes.get(l.headId) ?? '']) || '4020'; income.set(acct, (income.get(acct) ?? 0) + l.amountMinor); }
+    await postJournal(tx, a.tenantId, { memo: `Invoice ${number}`, source: 'invoice', sourceRef: inv.id, postedBy: a.userId, lines: [{ account: '1100', debit: total }, ...[...income].map(([account, credit]) => ({ account, credit }))] });
     await audit(tx, a as AuthContext, a.tenantId, 'finance.invoice_create', 'invoice', inv.id, null, { number, totalMinor: total });
     return { id: inv.id, number, totalMinor: Number(inv.total_minor) };
   }
@@ -533,6 +546,7 @@ export class FinanceController {
       left -= take;
     }
     await tx.query(`insert into ledger_entries(tenant_id, student_id, kind, ref_id, credit_minor, description) values ($1,$2,'payment',$3,$4,$5)`, [a.tenantId, p.studentId, pay.id, p.amountMinor, `Payment ${receiptNo} (${p.method})`]);
+    await postJournal(tx, a.tenantId, { memo: `Receipt ${receiptNo} (${p.method})`, source: 'payment', sourceRef: pay.id, postedBy: a.userId, lines: [{ account: CASH_BY_METHOD[p.method] ?? '1010', debit: p.amountMinor }, { account: '1100', credit: p.amountMinor }] });
     await audit(tx, a as AuthContext, a.tenantId, 'finance.payment', 'payment', pay.id, null, { receiptNo, amountMinor: p.amountMinor, method: p.method });
     await notify(tx, a.tenantId, await guardianUserIds(tx, p.studentId), 'finance.receipt', 'Payment received', `Receipt ${receiptNo} issued${p.method === 'online_demo' ? ' (DEMO / simulated payment)' : ''}.`);
     return { id: pay.id as string, receiptNo, amountMinor: p.amountMinor };

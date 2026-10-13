@@ -4,6 +4,7 @@ import { DbService, Tx } from '../db/db.service';
 import { Auth, AuthContext, campusScope, can, needs, parse, pid, uuid } from '../common/http';
 import { audit } from '../common/audit';
 import { guardianUserIds, isGuardianOf, notify, scopedStudent, studentAccess } from '../sis/access';
+import { postJournal } from '../common/gl';
 
 const docS = z.object({ kind: z.string().min(2).max(60), reference: z.string().max(100).optional(), issuedOn: z.string().date().optional(), expiresOn: z.string().date().optional(), fileId: uuid.optional() });
 const prevS = z.object({ schoolName: z.string().min(2).max(200), lastGrade: z.string().max(40).optional(), fromYear: z.string().max(9).optional(), toYear: z.string().max(9).optional(), summary: z.string().max(500).optional() });
@@ -284,7 +285,8 @@ export class LifecycleController {
         needs(a, 'finance.approve', w.campus_id);   // only a finance approver can write off dues
         const invs = (await tx.query(`select i.id, i.number, (i.total_minor - coalesce((select sum(amount_minor) from invoice_adjustments where invoice_id = i.id),0) - coalesce((select sum(amount_minor) from payment_allocations where invoice_id = i.id),0)) as due from invoices i where i.student_id = $1 and i.status <> 'void'`, [w.student_id])).rows.filter((r) => Number(r.due) > 0);
         for (const i of invs) {
-          await tx.query('insert into invoice_adjustments(tenant_id, invoice_id, amount_minor, reason, approved_by) values ($1,$2,$3,$4,$5)', [a.tenantId, i.id, i.due, `Written off on ${w.kind.replace('_', ' ')}`, a.userId]);
+          const adj = (await tx.query(`insert into invoice_adjustments(tenant_id, invoice_id, amount_minor, reason, approved_by, source) values ($1,$2,$3,$4,$5,'write_off') returning id`, [a.tenantId, i.id, i.due, `Written off on ${w.kind.replace('_', ' ')}`, a.userId])).rows[0];
+          await postJournal(tx, a.tenantId, { memo: `Write-off ${i.number}`, source: 'adjustment', sourceRef: adj.id, postedBy: a.userId, lines: [{ account: '5900', debit: Number(i.due) }, { account: '1100', credit: Number(i.due) }] });
           await tx.query(`insert into ledger_entries(tenant_id, student_id, kind, ref_id, credit_minor, description) values ($1,$2,'credit_note',$3,$4,$5)`, [a.tenantId, w.student_id, i.id, i.due, `Write-off on ${i.number}: ${w.kind.replace('_', ' ')}`]);
         }
       }
