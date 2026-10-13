@@ -9,11 +9,10 @@ import { SYSTEM_ROLES } from '../common/permissions';
 import { audit } from '../common/audit';
 import { seedOperations } from './seed-ops';
 import { seedOperations2 } from './seed-ops2';
+import { seedOperations3 } from './seed-ops3';
 
-export const DEMO_SLUG = 'greenwood';
-export const DEMO_PASSWORD = 'Demo-Passw0rd!2026';
-/** Demo-only TOTP secret shared by privileged demo accounts (generate codes with `npm run demo:code`). */
-export const DEMO_MFA_SECRET = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
+export { DEMO_SLUG, DEMO_PASSWORD, DEMO_MFA_SECRET } from './constants';
+import { DEMO_SLUG, DEMO_PASSWORD, DEMO_MFA_SECRET } from './constants';
 
 function rng(seed: number) { // mulberry32
   return () => { seed |= 0; seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
@@ -32,6 +31,8 @@ export async function seedDemo(db: DbService): Promise<SeedResult> {
     if (!done) await seedOperations(db, existing.id); // completes an interrupted seed
     const done2 = await db.withTenant(existing.id, async (tx) => (await tx.query(`select 1 from audit_log where action = 'demo.seed.ops2'`)).rowCount);
     if (!done2) await seedOperations2(db, existing.id);
+    const done3 = await db.withTenant(existing.id, async (tx) => (await tx.query(`select 1 from audit_log where action = 'demo.seed.ops3'`)).rowCount);
+    if (!done3) await seedOperations3(db, existing.id);
     return { created: false, ...(await counts(db, existing.id)) };
   }
   const pwHash = await hashPassword(DEMO_PASSWORD);
@@ -171,6 +172,7 @@ export async function seedDemo(db: DbService): Promise<SeedResult> {
   });
   await seedOperations(db, t.id);
   await seedOperations2(db, t.id);
+  await seedOperations3(db, t.id);
   return { created: true, ...(await counts(db, t.id)) };
 }
 

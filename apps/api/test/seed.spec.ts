@@ -222,3 +222,53 @@ describe('demo seed — phase 3 modules', () => {
     expect(exp.text.split('\r\n').length).toBeGreaterThan(300);
   });
 });
+
+describe('demo seed — phase 4 (accounting, lifecycle, consents, advanced learning)', () => {
+  it('general ledger is balanced and agrees with the fee sub-ledger and payroll', async () => {
+    const acct = await demoLogin('accountant', true);
+    const t = (await http(app).get('/accounting/trial-balance').set(auth(acct)).expect(200)).body;
+    expect(t.balanced).toBe(true); expect(t.accounts.length).toBeGreaterThan(8);
+    const bal = (code: string) => { const r = t.accounts.find((x: any) => x.code === code); return r ? r.balanceDebit - r.balanceCredit : 0; };
+    const sum = (await http(app).get('/finance/summary').set(auth(acct)).expect(200)).body;
+    expect(bal('1100')).toBe(sum.outstanding);                                         // receivable control account = Σ invoice outstanding
+    expect(bal('2100')).toBe(0);                                                       // the seeded payroll run is paid
+    expect(bal('2000')).toBe(-(await scalar(`select coalesce(sum(total_minor),0)::int n from vendor_bills where status = 'open'`)));
+    const bs = (await http(app).get(`/accounting/reports/balance-sheet?asOf=2099-12-31`).set(auth(acct)).expect(200)).body;
+    expect(bs.balanced).toBe(true);
+    const bva = (await http(app).get(`/accounting/budget-vs-actual?academicYearId=${(await db.raw('select 1'), (await db.withTenant(tenantId, async (tx) => (await tx.query('select id from academic_years where is_current')).rows[0].id)))}`).set(auth(acct)).expect(200)).body;
+    expect(bva.length).toBe(5);
+    const rec = (await http(app).get('/accounting/bank-reconciliation').set(auth(acct)).expect(200)).body;
+    expect(rec.unmatchedStatement.length).toBeGreaterThan(3);
+    const matched = (await http(app).post('/accounting/bank-reconciliation/auto-match').set(auth(acct)).expect(201)).body;
+    expect(matched.matched).toBeGreaterThan(20);
+    expect(await scalar(`select count(*)::int n from journal_entries e where (select sum(debit_minor) from journal_lines where entry_id = e.id) <> (select sum(credit_minor) from journal_lines where entry_id = e.id)`)).toBe(0);
+  });
+  it('admissions, lifecycle and consent data support the demo workflows', async () => {
+    expect(await scalar('select count(*)::int n from enquiries')).toBe(15);
+    expect(await scalar('select count(*)::int n from student_documents')).toBeGreaterThanOrEqual(60);
+    const reg = await demoLogin('registrar');
+    expect((await http(app).get('/student-documents/expiring?days=60').set(auth(reg)).expect(200)).body.length).toBeGreaterThan(3);
+    expect((await http(app).get('/withdrawals').set(auth(reg)).expect(200)).body.length).toBe(1);
+    const pv = (await http(app).get(`/promotion/preview?academicYearId=${await db.withTenant(tenantId, async (tx) => (await tx.query('select id from academic_years where is_current')).rows[0].id)}`).set(auth(reg)).expect(200)).body.students;
+    expect(pv.some((x: any) => x.suggestion === 'promote')).toBe(true); expect(pv.some((x: any) => x.suggestion === 'needs_review')).toBe(true);
+    const parent = await demoLogin('parent');
+    const mine = (await http(app).get('/consents/mine').set(auth(parent)).expect(200)).body;
+    expect(mine.length).toBeGreaterThanOrEqual(4); expect(mine.every((m: any) => m.response === null)).toBe(true);   // the demo parent still has everything to answer
+    const forms = (await http(app).get('/consents').set(auth(reg)).expect(200)).body;
+    expect(forms).toHaveLength(3); expect(forms.every((f: any) => f.responses >= 10)).toBe(true);
+  });
+  it('advanced learning data: competencies, discussions awaiting moderation, plans, portfolio', async () => {
+    const student = await demoLogin('student');
+    const me = (await db.withTenant(tenantId, async (tx) => (await tx.query(`select id from students where user_id = (select id from users where email = 'student@greenwood.demo')`)).rows[0].id));
+    const pf = (await http(app).get(`/students/${me}/portfolio`).set(auth(student)).expect(200)).body;
+    expect(pf).toHaveLength(2);
+    expect(await scalar(`select count(*)::int n from discussion_posts where status = 'pending'`)).toBeGreaterThan(0);
+    expect(await scalar('select count(*)::int n from competency_assessments')).toBeGreaterThan(100);
+    expect(await scalar(`select count(*)::int n from learning_plans where status = 'active'`)).toBeGreaterThanOrEqual(5);
+  });
+  it('seeding twice still adds nothing', async () => {
+    const before = await scalar('select count(*)::int n from journal_entries');
+    await seedDemo(db);
+    expect(await scalar('select count(*)::int n from journal_entries')).toBe(before);
+  });
+});
