@@ -63,6 +63,9 @@ export class FilesController {
           `select c.teacher_user_id, sec.campus_id, exists (select 1 from course_enrollments ce join students s on s.id = ce.student_id where ce.course_id = c.id and ce.status = 'active' and s.user_id = $2) as enrolled
            from lessons l join courses c on c.id = l.course_id join sections sec on sec.id = c.section_id where l.id = $1`, [l.entity_id, a.userId]);
         if (r && (r.teacher_user_id === a.userId || can(a, 'course.manage', r.campus_id) || r.enrolled)) return true;
+      } else if (l.entity_type === 'student_document') {
+        const { rows: [r] } = await tx.query('select d.student_id, s.campus_id from student_documents d join students s on s.id = d.student_id where d.id = $1', [l.entity_id]);
+        if (r && (can(a, 'student.write', r.campus_id) || (await isGuardianOf(tx, a.userId, r.student_id)))) return true;
       } else {
         const { rows: [r] } = await tx.query(
           `select c.teacher_user_id, sec.campus_id, sub.student_id, st.user_id from submissions sub join assignments asg on asg.id = sub.assignment_id join courses c on c.id = asg.course_id

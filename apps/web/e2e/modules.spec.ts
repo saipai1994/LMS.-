@@ -90,8 +90,9 @@ test('teacher timetable grid, communications honesty and ticket SLA', async ({ p
 test('HR: payroll cannot be approved by HR; staff see only their own pay', async ({ page }) => {
   await signIn(page, 'hr', true);
   await page.goto('/hr');
-  await expect(page.getByRole('heading', { name: 'Payroll runs' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0);
+  const payroll = page.locator('section.card', { has: page.getByRole('heading', { name: 'Payroll runs' }) });
+  await expect(payroll.locator('tbody tr').first()).toBeVisible();                 // wait until the runs table has loaded
+  await expect(payroll.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0);   // HR prepares; only the principal approves
   await page.getByLabel('Month (YYYY-MM)').fill('2026-10');
   await page.getByRole('button', { name: 'Create draft run' }).click();
   await expect(page.getByText(/Draft run created/)).toBeVisible();
