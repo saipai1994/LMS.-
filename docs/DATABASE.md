@@ -1,0 +1,2 @@
+# Database
+Migrations: `apps/api/migrations/001_core_auth_rbac_audit.sql` (tenants, campuses, users, sessions, roles, audit, academic years, sequences), `002_sis_admissions_academics_lms.sql` (grades, sections, subjects, students, guardians, enrollments, residence, medical alerts, admissions, courses, course enrollments). Applied in order by `DbService.migrate` (tracked in `schema_migrations`). All tenant tables are RLS-forced. Dates are returned as `YYYY-MM-DD` strings.

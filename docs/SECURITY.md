@@ -1,0 +1,3 @@
+# Security (implemented controls)
+RLS tenant isolation; scrypt passwords (min 12 chars); opaque sessions (12h), revocation on disable; 5-failure lockout (15 min); per-IP login limiter; TOTP MFA mandatory for accounts holding privileged permissions (`common/permissions.ts: PRIVILEGED`); separate permissions for medical data with audited reads; append-only audit trigger; platform endpoints guarded by constant-time token compare; security headers (`nosniff`, `no-store`).
+Not yet: password reset, CSRF/cookie hardening (n/a for bearer), TLS termination docs, encryption at rest, dependency/SAST scans, penetration testing, incident-response runbook, DPDP assessment. See KNOWN_LIMITATIONS.
