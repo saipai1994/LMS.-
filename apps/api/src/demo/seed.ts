@@ -7,6 +7,7 @@ import { DbService } from '../db/db.service';
 import { hashPassword, sha256 } from '../common/crypto';
 import { SYSTEM_ROLES } from '../common/permissions';
 import { audit } from '../common/audit';
+import { seedOperations } from './seed-ops';
 
 export const DEMO_SLUG = 'greenwood';
 export const DEMO_PASSWORD = 'Demo-Passw0rd!2026';
@@ -26,8 +27,9 @@ export interface SeedResult { created: boolean; students: number; guardians: num
 export async function seedDemo(db: DbService): Promise<SeedResult> {
   const [existing] = await db.raw('select id from tenants where slug = $1', [DEMO_SLUG]);
   if (existing) {
-    const c = await counts(db, existing.id);
-    return { created: false, ...c };
+    const done = await db.withTenant(existing.id, async (tx) => (await tx.query(`select 1 from audit_log where action = 'demo.seed.ops'`)).rowCount);
+    if (!done) await seedOperations(db, existing.id); // completes an interrupted seed
+    return { created: false, ...(await counts(db, existing.id)) };
   }
   const pwHash = await hashPassword(DEMO_PASSWORD);
   const R = rng(20260401);
@@ -59,6 +61,7 @@ export async function seedDemo(db: DbService): Promise<SeedResult> {
       ['teacher', 'Lakshmi Krishnan', 'teacher'], ['warden', 'Rakesh Thakur', 'warden'], ['transport', 'Imran Qureshi', 'transport'],
       ['nurse', 'Sister Grace Mathew', 'nurse'], ['librarian', 'Anita Deshpande', 'librarian'], ['inventory', 'Pradeep Kulkarni', 'inventory_manager'],
       ['registrar', 'Neha Bhatia', 'registrar'], ['campusadmin', 'Vikram Oberoi', 'campus_admin'],
+      ['gate', 'Bhaskar Singh', 'security_staff'], ['examcoord', 'Rita Fernandes', 'exam_coordinator'],
     ];
     const teachers: string[] = [];
     let staffCount = 0;
@@ -92,7 +95,7 @@ export async function seedDemo(db: DbService): Promise<SeedResult> {
       sections.push({ id: sec.id, grade: g.n, name: s, count: 0 });
       for (let k = 0; k < subjectIds.length; k++) {
         await q('insert into courses(tenant_id, section_id, subject_id, teacher_user_id, title) values ($1,$2,$3,$4,$5)',
-          [t.id, sec.id, subjectIds[k], teachers[(ti + k) % teachers.length], `${SUBJECTS[k][1]} — Grade ${g.n}${s}`]);
+          [t.id, sec.id, subjectIds[k], teachers[courses % teachers.length], `${SUBJECTS[k][1]} — Grade ${g.n}${s}`]);
         courses++;
       }
     }
@@ -161,6 +164,7 @@ export async function seedDemo(db: DbService): Promise<SeedResult> {
                values ($1,$2,$3,$4,$5,$6,'2014-08-15',$7,$8,'+91-98000-00000',$9,$10)`, [t.id, campus.id, year.id, g7.id, f, l, `Parent of ${f} ${l}`, em, res, status]);
     await audit(tx, null, t.id, 'demo.seed', 'tenant', t.id, null, { students: sIdx, guardians: guardianCount });
   });
+  await seedOperations(db, t.id);
   return { created: true, ...(await counts(db, t.id)) };
 }
 

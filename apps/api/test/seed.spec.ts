@@ -82,3 +82,76 @@ describe('demo seed', () => {
     expect(ov.residence[0].residence_type).toBe('boarder');
   });
 });
+
+describe('demo seed — operational modules', () => {
+  it('meets minimum volume targets for implemented modules', async () => {
+    const min: [string, number][] = [
+      ['select count(*)::int n from lessons', 100], ['select count(*)::int n from assignments', 150], ['select count(*)::int n from attendance_records', 500],
+      ['select count(*)::int n from invoices', 200], ['select count(*)::int n from payments', 200], ['select count(*)::int n from submissions', 500],
+      ['select count(*)::int n from beds', 80], ['select count(*)::int n from leave_requests', 8], ['select count(*)::int n from incidents', 6], ['select count(*)::int n from quizzes', 3],
+    ];
+    for (const [sql, n] of min) expect(await scalar(sql)).toBeGreaterThanOrEqual(n);
+    expect(await scalar('select count(*)::int n from hostels')).toBe(3);
+    expect(await scalar('select count(*)::int n from bed_assignments where effective_to is null')).toBe(80);
+  });
+  it('financial data is internally consistent', async () => {
+    expect(await scalar(`select count(*)::int n from invoices i where (select coalesce(sum(amount_minor),0) from invoice_lines where invoice_id = i.id) <> i.total_minor`)).toBe(0);
+    expect(await scalar(`select count(*)::int n from invoices i where (select coalesce(sum(amount_minor),0) from payment_allocations where invoice_id = i.id) > i.total_minor`)).toBe(0);
+    expect(await scalar(`select count(*)::int n from payments p where p.amount_minor <> (select coalesce(sum(amount_minor),0) from payment_allocations where payment_id = p.id)`)).toBe(0);
+    const accountant = await demoLogin('accountant', true);
+    const rec = (await http(app).get('/finance/reconciliation').set(auth(accountant)).expect(200)).body;
+    expect(rec.discrepancies).toEqual([]);
+    const sum = (await http(app).get('/finance/summary').set(auth(accountant)).expect(200)).body;
+    expect(sum.invoiced).toBeGreaterThan(0); expect(sum.collected).toBeLessThan(sum.invoiced);
+    expect(sum.outstanding).toBe(sum.invoiced - sum.collected);
+    expect(sum.overdue_invoices).toBeGreaterThan(0);
+  });
+  it('role dashboards have data: warden, teacher, parent, student, principal, gate', async () => {
+    const warden = await demoLogin('warden');
+    const st = (await http(app).get('/hostel/status').set(auth(warden)).expect(200)).body;
+    const boarders = await scalar(`select count(*)::int n from residence_assignments where residence_type = 'boarder' and effective_to is null`);
+    expect(st.summary.on_campus + st.summary.on_leave + st.summary.overdue).toBe(boarders); // includes the Scenario A newcomer, who has no bed yet
+    expect(st.summary.overdue).toBeGreaterThanOrEqual(1); expect(st.summary.on_leave).toBeGreaterThanOrEqual(1);
+    const hostels = (await http(app).get('/hostels').set(auth(warden)).expect(200)).body;
+    expect(hostels).toHaveLength(3); expect(hostels.reduce((t: number, h: any) => t + h.occupied, 0)).toBe(80);
+    const leave = (await http(app).get('/leave-requests').set(auth(warden)).expect(200)).body;
+    expect(new Set(leave.map((l: any) => l.status))).toEqual(new Set(['requested', 'approved', 'out', 'returned']));
+
+    const parent = await demoLogin('parent');
+    const kids = (await http(app).get('/me/children').set(auth(parent)).expect(200)).body;
+    const inv = (await http(app).get('/finance/me/invoices').set(auth(parent)).expect(200)).body;
+    expect(inv.length).toBe(kids.length * 2);
+    const rc = (await http(app).get(`/students/${kids[0].id}/report-card`).set(auth(parent)).expect(200)).body;
+    expect(rc.items.length).toBeGreaterThan(0);
+    const learn = (await http(app).get(`/students/${kids[0].id}/learning`).set(auth(parent)).expect(200)).body;
+    expect(learn.assignments.length).toBeGreaterThan(10);
+    const att = (await http(app).get(`/students/${kids[0].id}/attendance`).set(auth(parent)).expect(200)).body;
+    expect(att.summary.days).toBe(10);
+    expect((await http(app).get('/notifications').set(auth(parent)).expect(200)).body.length).toBeGreaterThanOrEqual(4);
+
+    const student = await demoLogin('student');
+    const mine = (await http(app).get('/me/learning').set(auth(student)).expect(200)).body;
+    expect(mine.assignments.length).toBeGreaterThan(10);
+
+    const teacher = await demoLogin('teacher');
+    const taught = (await db.withTenant(tenantId, async (tx) => (await tx.query(`select c.id from courses c join users u on u.id = c.teacher_user_id where u.email = 'teacher@greenwood.demo' and exists (select 1 from assignments where course_id = c.id)`)).rows));
+    expect(taught.length).toBeGreaterThan(0);
+    const gb = (await http(app).get(`/courses/${taught[0].id}/gradebook`).set(auth(teacher)).expect(200)).body;
+    expect(gb.assignments.length).toBe(2); expect(gb.students.length).toBeGreaterThan(5);
+    await http(app).get(`/courses/${taught[0].id}/gradebook`).set(auth(parent)).expect(404);
+
+    const gate = await demoLogin('gate');
+    const today = (await http(app).get('/dismissal/today').set(auth(gate)).expect(200)).body;
+    expect(today.collected + today.pending).toBe(220); expect(today.collected).toBeGreaterThan(0);
+
+    const principal = await demoLogin('principal', true);
+    const incidents = (await http(app).get('/incidents').set(auth(principal)).expect(200)).body;
+    expect(incidents.some((i: any) => i.category === 'safeguarding')).toBe(false);   // restricted from principal
+    expect(incidents.length).toBe(5);
+  });
+  it('seeding twice does not duplicate operational data', async () => {
+    const before = await scalar('select count(*)::int n from invoices');
+    await seedDemo(db);
+    expect(await scalar('select count(*)::int n from invoices')).toBe(before);
+  });
+});
