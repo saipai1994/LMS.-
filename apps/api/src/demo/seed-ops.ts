@@ -117,6 +117,7 @@ export async function seedOperations(db: DbService, tenantId: string): Promise<v
         row_number() over (order by i.number) as rn
       from invoices i join students s on s.id = i.student_id`);
     await q(`delete from _pay where amount <= 0`);
+    await q(`update _pay set rn = r.n from (select invoice_id, row_number() over (order by number) as n from _pay) r where r.invoice_id = _pay.invoice_id`); // gap-free receipt numbers
     await q(`insert into payments(tenant_id, student_id, receipt_no, method, amount_minor, reference, idempotency_key, request_hash, received_by, received_at)
              select $1, student_id, 'RCT-' || lpad(rn::text, 6, '0'), method, amount, case when method = 'online_demo' then 'demo:seed-' || number end, 'seed:' || number, 'seed', null, issue_date + 10 from _pay`, T);
     await q(`insert into payment_allocations(tenant_id, payment_id, invoice_id, amount_minor) select $1, p.id, _pay.invoice_id, _pay.amount from _pay join payments p on p.idempotency_key = 'seed:' || _pay.number`, T);

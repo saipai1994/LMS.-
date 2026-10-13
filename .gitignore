@@ -6,3 +6,7 @@ dist/
 *.log
 .next/
 data/
+test-results/
+playwright-report/
+*.tsbuildinfo
+next-env.d.ts

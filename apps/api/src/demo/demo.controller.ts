@@ -9,7 +9,7 @@ export class DemoController {
   @Get('info')
   info() {
     if (process.env.DEMO_MODE !== 'true' || process.env.NODE_ENV === 'production') throw new NotFoundException();
-    const accounts = ['admin', 'principal', 'admissions', 'accountant', 'teacher', 'parent', 'student', 'warden', 'transport', 'nurse', 'librarian', 'inventory']
+    const accounts = ['admin', 'principal', 'admissions', 'accountant', 'teacher', 'parent', 'student', 'warden', 'transport', 'nurse', 'librarian', 'inventory', 'gate', 'registrar', 'examcoord']
       .map((l) => `${l}@greenwood.demo`);
     return {
       demo: true, banner: 'DEMO — fictional data; payments, messaging, GPS and AI are not connected',

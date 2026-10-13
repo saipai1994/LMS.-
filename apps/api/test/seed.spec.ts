@@ -14,6 +14,7 @@ async function demoLogin(local: string, mfa = false) {
 }
 
 beforeAll(async () => {
+  process.env.DEMO_GATEWAY_SECRET = 'seed-test-gateway-secret-0123456789'; process.env.DEMO_MODE = 'true';
   app = await bootApp(); db = app.get(DbService);
   await seedDemo(db);
   [{ id: tenantId }] = await db.raw('select id from tenants where slug = $1', [DEMO_SLUG]);
@@ -148,6 +149,18 @@ describe('demo seed — operational modules', () => {
     const incidents = (await http(app).get('/incidents').set(auth(principal)).expect(200)).body;
     expect(incidents.some((i: any) => i.category === 'safeguarding')).toBe(false);   // restricted from principal
     expect(incidents.length).toBe(5);
+  });
+  it('receipt and invoice numbering continues without collisions after seeding', async () => {
+    expect(await scalar(`select (max(substr(receipt_no, 5)::int) - count(*))::int n from payments`)).toBe(0);   // gap-free
+    process.env.DEMO_MODE = 'true';
+    const parent = await demoLogin('parent');
+    const inv = (await http(app).get('/finance/me/invoices').set(auth(parent)).expect(200)).body.find((i: any) => Number(i.outstanding_minor) > 0);
+    const intent = (await http(app).post('/finance/payment-intents').set(auth(parent)).send({ invoiceId: inv.id }).expect(201)).body;
+    const r = (await http(app).post(`/finance/payment-intents/${intent.id}/simulate`).set(auth(parent)).send({ outcome: 'succeeded' }).expect(200)).body;
+    expect(r.status).toBe('succeeded');
+    const accountant = await demoLogin('accountant', true);
+    const man = await http(app).post('/finance/invoices').set(auth(accountant)).send({ studentId: inv.student_id, dueDate: '2026-12-31', lines: [{ description: 'Trip fee', amountMinor: 50000 }] }).expect(201);
+    expect(man.body.number).toMatch(/^INV-\d{6}$/);
   });
   it('seeding twice does not duplicate operational data', async () => {
     const before = await scalar('select count(*)::int n from invoices');
