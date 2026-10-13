@@ -10,11 +10,13 @@ import { AdmissionsController } from './admissions/admissions.controller';
 import { StudentsController } from './sis/students.controller';
 import { UsersController } from './tenants/users.controller';
 import { DemoController } from './demo/demo.controller';
+import { HostelController } from './hostel/hostel.controller';
+import { IncidentsController } from './incidents/incidents.controller';
 import { ErrorFilter } from './common/errors.filter';
 
 @Global()
 @Module({
-  controllers: [AuthController, PlatformController, AcademicsController, AdmissionsController, StudentsController, UsersController, DemoController],
+  controllers: [AuthController, PlatformController, AcademicsController, AdmissionsController, StudentsController, UsersController, DemoController, HostelController, IncidentsController],
   providers: [DbService, AuthService, { provide: APP_GUARD, useClass: AuthGuard }, { provide: APP_FILTER, useClass: ErrorFilter }],
   exports: [DbService],
 })

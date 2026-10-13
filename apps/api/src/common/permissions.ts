@@ -4,35 +4,37 @@ export const PERMISSIONS = [
   'admissions.read', 'admissions.write', 'admissions.decide', 'admissions.enroll',
   'student.read', 'student.write', 'medical.read', 'medical.write',
   'course.manage', 'course.read_all',
+  'hostel.manage', 'hostel.read', 'leave.approve', 'gate.record', 'rollcall.record',
+  'incident.report', 'incident.manage', 'safeguarding.manage',
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
 /** Permissions that make an account "privileged" and therefore require MFA. */
-export const PRIVILEGED: Permission[] = ['tenant.manage', 'campus.manage', 'user.manage', 'role.manage', 'audit.read', 'admissions.enroll', 'medical.read', 'medical.write'];
+export const PRIVILEGED: Permission[] = ['tenant.manage', 'campus.manage', 'user.manage', 'role.manage', 'audit.read', 'admissions.enroll', 'medical.read', 'medical.write', 'safeguarding.manage'];
 
 export interface SystemRole { key: string; name: string; permissions: Permission[] }
 const ALL = [...PERMISSIONS];
 // Roles with no permissions yet belong to modules not implemented (see docs/REQUIREMENTS_TRACEABILITY.md).
 export const SYSTEM_ROLES: SystemRole[] = [
   { key: 'group_admin', name: 'School group administrator', permissions: ALL },
-  { key: 'campus_admin', name: 'Campus administrator', permissions: ALL.filter((p) => p !== 'tenant.manage') },
-  { key: 'principal', name: 'Principal', permissions: ['academic.read', 'admissions.read', 'student.read', 'course.read_all', 'audit.read'] },
+  { key: 'campus_admin', name: 'Campus administrator', permissions: ALL.filter((p) => p !== 'tenant.manage' && p !== 'safeguarding.manage') },
+  { key: 'principal', name: 'Principal', permissions: ['academic.read', 'admissions.read', 'student.read', 'course.read_all', 'audit.read', 'hostel.read', 'incident.manage'] },
   { key: 'admissions_officer', name: 'Admissions officer', permissions: ['academic.read', 'admissions.read', 'admissions.write', 'admissions.decide', 'admissions.enroll', 'student.read'] },
   { key: 'registrar', name: 'Registrar', permissions: ['academic.manage', 'academic.read', 'student.read', 'student.write', 'admissions.read'] },
   { key: 'accountant', name: 'Accountant', permissions: [] },
-  { key: 'teacher', name: 'Teacher and class teacher', permissions: ['academic.read'] },
+  { key: 'teacher', name: 'Teacher and class teacher', permissions: ['academic.read', 'incident.report'] },
   { key: 'exam_coordinator', name: 'Examination coordinator', permissions: ['academic.read'] },
   { key: 'lms_admin', name: 'LMS administrator', permissions: ['academic.read', 'course.manage', 'course.read_all'] },
   { key: 'student', name: 'Student', permissions: [] },
   { key: 'parent', name: 'Parent or guardian', permissions: [] },
-  { key: 'warden', name: 'Hostel warden and house parent', permissions: ['student.read'] },
+  { key: 'warden', name: 'Hostel warden and house parent', permissions: ['student.read', 'hostel.manage', 'hostel.read', 'leave.approve', 'gate.record', 'rollcall.record', 'incident.report', 'incident.manage'] },
   { key: 'transport', name: 'Transport manager, driver and attendant', permissions: [] },
   { key: 'nurse', name: 'Nurse and counsellor', permissions: ['student.read', 'medical.read', 'medical.write'] },
-  { key: 'safeguarding_officer', name: 'Safeguarding officer', permissions: ['student.read'] },
+  { key: 'safeguarding_officer', name: 'Safeguarding officer', permissions: ['student.read', 'incident.report', 'incident.manage', 'safeguarding.manage'] },
   { key: 'librarian', name: 'Librarian', permissions: [] },
   { key: 'inventory_manager', name: 'Inventory manager', permissions: [] },
   { key: 'hr_payroll', name: 'HR and payroll staff', permissions: [] },
-  { key: 'security_staff', name: 'Security and gate staff', permissions: [] },
+  { key: 'security_staff', name: 'Security and gate staff', permissions: ['student.read', 'gate.record', 'incident.report'] },
   { key: 'kitchen_manager', name: 'Kitchen manager', permissions: [] },
   { key: 'auditor', name: 'Auditor or read-only user', permissions: ['audit.read', 'academic.read', 'student.read', 'admissions.read', 'course.read_all'] },
 ];

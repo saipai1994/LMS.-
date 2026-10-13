@@ -61,3 +61,31 @@ export async function adminSession(app: INestApplication, slug: string, boarding
   const token = await login(app, slug, `admin@${slug}.test`, secret);
   return { ...t, token, secret, slug };
 }
+
+export const bearer = (t: string) => ({ Authorization: `Bearer ${t}` });
+
+/** Creates a user with a role, activates it and logs in (enrolling MFA when the role is privileged). */
+export async function userSession(app: INestApplication, slug: string, adminToken: string, email: string, roleKey: string, campusId: string | null = null) {
+  const u = (await http(app).post('/users').set(bearer(adminToken)).send({ email, fullName: email.split('@')[0], roleKey, campusId }).expect(201)).body;
+  await activate(app, slug, u.inviteToken);
+  let token = await login(app, slug, email);
+  const me = (await http(app).get('/auth/me').set(bearer(token)).expect(200)).body;
+  if (me.privileged) { const secret = await enrolMfa(app, token); token = await login(app, slug, email, secret); }
+  return { userId: u.userId as string, token };
+}
+
+/** Sets up year/grade/section and returns a function that admits+enrols a student. */
+export async function schoolBase(app: INestApplication, adminToken: string, campusId: string, capacity = 30) {
+  const post = async (url: string, body: any) => (await http(app).post(url).set(bearer(adminToken)).send(body).expect(201)).body;
+  const year = await post('/academic-years', { name: '2026-27', startsOn: '2026-04-01', endsOn: '2027-03-31', isCurrent: true });
+  const grade = await post('/grade-levels', { name: 'Grade 8', ordinal: 8 });
+  const section = await post('/sections', { campusId, academicYearId: year.id, gradeLevelId: grade.id, name: 'A', capacity });
+  let n = 0;
+  const admit = async (residence: 'boarder' | 'day_scholar', guardianEmail: string, first = 'Stu') => {
+    n++;
+    const ap = await post('/admissions', { campusId, academicYearId: year.id, gradeLevelId: grade.id, applicantFirstName: `${first}${n}`, applicantLastName: 'Test', applicantDob: '2012-01-01', guardianName: `Guardian ${n}`, guardianEmail, residencePreference: residence });
+    for (const to of ['under_review', 'offered', 'accepted']) await post(`/admissions/${ap.id}/transition`, { to });
+    return post(`/admissions/${ap.id}/enroll`, { sectionId: section.id, effectiveFrom: '2026-04-01' }) as Promise<{ studentId: string; parentInviteToken: string | null; admissionNo: string }>;
+  };
+  return { year, grade, section, post, admit };
+}
