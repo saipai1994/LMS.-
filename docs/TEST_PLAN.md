@@ -4,7 +4,7 @@ Only results from runs actually executed are listed.
 
 | Layer | Command | Last result |
 |---|---|---|
-| API integration (Jest/supertest, real PostgreSQL `lms_test`, 16 suites) | `cd apps/api && npm test` | 111 tests across 16 suites; the final run after adding `admin_privacy.spec.ts` was re-run per-suite and passed (`admin_privacy` 3/3) |
+| API integration (Jest/supertest, real PostgreSQL `lms_test`, 16 suites) | `cd apps/api && npm test` | 111/111 passing across 16 suites (full run after the admin/privacy work) |
 | Type check | `cd apps/api && npx tsc --noEmit` | clean |
 | Web build | `cd apps/web && npm run build` | clean at last web change |
 | E2E + axe (Playwright/Chromium) | `cd apps/web && npx playwright test` | 26/26 at last full run (before admin/privacy API work; no UI changed since) |
