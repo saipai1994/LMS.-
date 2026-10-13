@@ -1,14 +1,25 @@
-# Known limitations and defects (session 1)
-- **No frontend.** No dashboards, no Next.js app; the "demo" is API + seeded data. No accessibility/localization work.
-- Most modules (D–F, H–K, N–S, most of G) are not started; seed data exists only for implemented tables.
-  The 100-lessons/150-assignments/500-attendance/200-invoice/library/etc. demo targets are **not met**.
-- Platform administrator is a bootstrap token (`PLATFORM_BOOTSTRAP_TOKEN`), not a user with MFA/audit identity. No tenant offboarding/export.
-- Email/SMS/push are not configured: invite tokens are returned in API responses to the authorised caller. No password reset flow yet.
-- Login rate limiter is in-memory (per process); needs Redis/DB store for multiple instances. No CSRF concerns yet (bearer tokens, no cookies).
-- Audit coverage is partial (admissions, enrolment, user, medical, auth, residence); reads other than medical are not audited. Audit log can be deleted only by dropping the schema (reset command).
-- Roles for unbuilt modules have empty permission sets; users with those roles can log in but see nothing.
-- Teacher scoping covers courses only (no timetable/attendance scoping yet). No field-level encryption, no encryption-at-rest configuration, no file storage.
-- Legal: DPDP/education/accounting obligations not yet assessed; no consent workflows. Demo data is fictional.
-- Migrations are forward-only SQL; no down migrations or backup/restore procedure tested.
-- `npm audit` reports advisories in dev dependencies; not yet triaged.
-- Tests must run in band (`npm test`); they wipe `lms_test`.
+# Known limitations and defects
+
+Honest list as of the latest session. Nothing here is hidden behind a "success" message in the UI.
+
+## Not connected / simulated
+- **No real email, SMS, WhatsApp, push, payment gateway, GPS, biometric/RFID/QR hardware, SSO or AI provider.** Notifications are in-app only; email/SMS are recorded as `not_configured`. The payment gateway is a signed-webhook **Demo** gateway.
+- Plagiarism checking, live classes, AI tools, adaptive pathways, gamification: not implemented.
+- PDFs: printable HTML only; no server-side PDF generation.
+
+## Features absent or partial (see traceability matrix)
+- Custom fields/workflows engine, curriculum/syllabus/lesson plans, terms/semesters, sports houses, question papers/banks.
+- Admission-fee collection, GST, SaaS billing, tenant data deletion/offboarding.
+- Laundry, duty rosters, cafeteria wallet. Sibling/emergency-contact UIs.
+- Some accounting setup (manual journals, budgets, bank-statement import), grade/activity-scoped consents and the privacy module are **API-only** (no UI).
+- Privacy: anonymisation only blanks the student row identifiers; derived records (guardian contacts, documents, free text in other modules) are not scrubbed. Needs legal/DPDP review.
+
+## Operational
+- Rate limiter and the announcement scheduler are in-process: single instance only.
+- Docker images and `docker-compose.yml` have **not been built or run** (no usable Docker daemon in the dev environment).
+- Backups need a BYPASSRLS role (forced RLS blocks `pg_dump` as the app role). `scripts/backup-restore-check.sh` passed once on demo data; no scheduled backups or PITR.
+- Files are stored on local disk; no virus scanning or object storage.
+- Platform administration uses a bootstrap token, not an MFA-protected user.
+- No load, penetration or independent accessibility testing; a11y checks are automated axe (WCAG2A/AA) on key pages only.
+- Migrations are forward-only.
+- Legal/regulatory review (DPDP, education, accounting/GST) has not been done.

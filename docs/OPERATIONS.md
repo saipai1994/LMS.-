@@ -1,2 +1,5 @@
 # Operations
-Backups, restore tests, monitoring and incident response are not yet implemented or documented beyond: `pg_dump` the database; demo reset via `CONFIRM_RESET=yes DEMO_MODE=true npm run db:reset-demo` (destroys all data).
+- Health: `GET /health`. Audit trail: `GET /audit-log` (permissioned). Per-tenant usage and export via `/platform/*`.
+- Backup/restore: `scripts/backup-restore-check.sh`; schedule your own backups (none provided).
+- Migrations run on boot; forward-only. Demo reset: `npm run db:reset-demo` (demo mode only).
+- No metrics/alerting or log shipping configured. Announcements dispatch from a 60s in-process timer.

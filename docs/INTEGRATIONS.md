@@ -1,2 +1,9 @@
 # Integrations
-None are connected. Payments, SMS/email/push, GPS, video, accounting, RFID/QR/biometric, AI: not implemented; demo adapters ("Demo / Simulated") are planned and must never claim real delivery.
+| Integration | Status |
+|---|---|
+| Email / SMS / WhatsApp / push | Not configured; recorded as `not_configured`, UI never claims delivery |
+| Payment gateway | Demo gateway with signed webhooks, labelled DEMO / SIMULATED; no real gateway |
+| GPS / RFID / biometric / QR hardware | Not implemented (manual entry only) |
+| SSO / SAML / OAuth | Not implemented |
+| AI, plagiarism, live classes | Not implemented |
+| File storage | Local disk adapter only |

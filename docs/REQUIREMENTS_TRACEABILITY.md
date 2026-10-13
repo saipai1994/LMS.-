@@ -1,39 +1,33 @@
-# Requirements traceability (last updated: session 1)
+# Requirements traceability (latest session)
 
-Statuses: Not started · In progress · Implemented, tests pending · Verified · Blocked · Deferred.
-"Verified" = automated tests executed and passing (21/21 at this checkpoint: `apps/api/test/slice.spec.ts`, `seed.spec.ts`).
-Source spec: master prompt received in session; **its text was truncated mid-§6G (after "Advanced learning")** in the first message and
-resent in full later; the demo-data addendum is also in scope.
+Statuses: **Verified** = covered by automated tests that were executed and passed (API Jest, Playwright E2E). **Implemented, untested** = code exists, no dedicated test. **Partial**, **Not started**, **Deferred**.
+"API-only" = no UI. Test suites: `apps/api/test/*.spec.ts`, `apps/web/e2e/*.spec.ts`.
 
-## Module summary
-| ID | Module | Status | Notes |
-|---|---|---|---|
-| A | Organization & administration | In progress | tenants, campuses, academic years, grades, sections, subjects: **Verified** (create/list). Terms, holidays, buildings, houses, branding UI, approval chains, settings inheritance: Not started |
-| B | Admissions & enrollment | In progress | application → state machine → enroll (student ID, guardian, parent invite, section capacity, residence, LMS access): **Verified**. CRM enquiries, doc verification, tests/interviews, scholarships, offers/agreements, withdrawals: Not started |
-| C | SIS | In progress | student master, guardians, effective-dated enrollment & residence history (DB-enforced non-overlap), section transfer, restricted medical alerts: **Verified**. Documents, pickup persons workflow, leaving certificates, duplicate detection, corrections: Not started |
-| D | Academic management | Not started | (only sections/subjects/courses scaffolding) |
-| E | Attendance | Not started | |
-| F | Exams & report cards | Not started | |
-| G | LMS | In progress | courses per section/subject/teacher, roster sync on enroll/transfer, teacher roster access: **Verified**. Lessons, content, homework, assessments, gradebook, ERP sync: Not started |
-| H | Boarding & hostel | Not started | residence type only |
-| I | Day scholar / dismissal | Not started | |
-| J | Transport | Not started | |
-| K | Finance | Not started | |
-| L | Portals | In progress | API-only: parent `GET /me/children`, `GET /students/:id/overview`. No UI |
-| M | Health/safeguarding | In progress | medical alerts with separate permission + audited reads: **Verified**. Rest Not started |
-| N–S | Security/visitors, library/inventory, HR, meals/sports, communication, compliance/analytics | Not started | |
-| T | Security & infra | In progress | see below |
-
-## Implemented requirements
-| Req | Description | Location | Tests | Status |
-|---|---|---|---|---|
-| SEC-1 | Tenant isolation (Postgres RLS forced on all tenant tables) | migrations 001/002, `DbService.withTenant` | slice.spec "isolates tenants", "RLS blocks…" | Verified |
-| SEC-2 | Server-side RBAC with campus-scoped grants; configurable role tables; 21 seeded roles (platform admin = platform token, see limitations) | `common/http.ts`, `permissions.ts` | slice.spec | Verified (only roles with permissions are exercised) |
-| SEC-3 | Passwords (scrypt), opaque hashed sessions, lockout, login rate limit, MFA (TOTP) enforced for privileged accounts, disable → immediate revoke | `auth/*` | slice.spec | Verified (rate limit is in-memory) |
-| SEC-4 | Append-only audit log for sensitive actions | `common/audit.ts`, trigger | slice.spec | Verified (coverage partial) |
-| SEC-5 | Parent sees only linked children; teacher only own-course students, without family data; unrelated parent gets 404 | `sis/students.controller.ts` | slice.spec | Verified |
-| WF-1 | Admission → enrollment → student ID → class → parent account → LMS → residence (boarding **assignment type only**; no bed/transport) | `admissions/*` | slice.spec, seed.spec Scenario A | Verified (partial: no bed/transport) |
-| WF-6 | Transfer: section change + residence change with history preserved (no fee/access steps) | `sis/*` | slice.spec | In progress |
-| DEMO-1 | Deterministic idempotent seed, reset command w/ production guard, demo info, demo MFA | `demo/*` | seed.spec | Verified for implemented modules only |
-| DEMO-2 | Dummy data for all other modules, interactive UI, demo adapters, in-app reset, scenarios B–G | — | — | Not started |
-| WF-2,3,4,5,7 | Leave/gate, pickup, LMS→report card, invoice→payment, safety incident | — | — | Not started |
+| Area | Status | Evidence / notes |
+|---|---|---|
+| Tenancy, RLS, plans/entitlements, platform onboarding, usage, export | Verified | `slice`, `reports_saas_security` |
+| Auth: login, activation, lockout, MFA (TOTP), reset, sessions, password change | Verified | `slice`, `reports_saas_security`, `admin_privacy` (password/session coverage is light) |
+| RBAC: roles/permissions editor, campuses, user lifecycle & role grants | Verified (API) / Partial UI | `admin_privacy`; role editor has no web UI |
+| Academic setup (years, grades, sections, subjects), SIS, guardians, residence | Verified | `slice`, `seed` |
+| Admissions: application → offer/consent → enrol → LMS access | Verified | `slice`, `finance_admissions_extras`, E2E. Admission-fee collection: Not started |
+| Student lifecycle: promotion, withdrawal/transfer, clearance, documents, corrections | Verified | `lifecycle` |
+| Attendance, leave, hostel, dismissal (late/early), incidents | Verified | `attendance`, `hostel`, E2E |
+| LMS: courses, lessons, assignments, quizzes, discussions, analytics, files | Verified | `lms`, `engagement_advanced` |
+| Grades, official marks, report cards, exams, timetable | Verified | `lms`, `reports_saas_security`, `campus_comms_scheduling` |
+| Curriculum/syllabus/lesson plans, terms/semesters, question bank/papers | Not started | |
+| Learning pathways, gamification, AI tools, live classes, plagiarism | Not started | |
+| Finance: fee heads/structures, invoices, payments (idempotent), receipts, concessions, credit notes, refunds, Demo gateway | Verified | `finance`, `finance_admissions_extras` (online payments are DEMO / SIMULATED). GST: Not started |
+| Accounting: chart of accounts, auto-posted balanced journals, trial balance, backfill | Verified | `accounting`. Manual journals, budgets, bank import: API-only |
+| Transport, library, inventory/procurement | Verified | `transport`, `library_inventory`; real GPS: Not started |
+| HR/payroll, health/medication, security/visitors | Verified | `hr_health_security` |
+| Meals, activities, awards, calendar, tickets, communications, notifications | Verified | `campus_comms_scheduling`, E2E. Email/SMS delivery: not configured |
+| Consents (grade/activity scoped) | Partial | API-only |
+| Reports and dashboards (role-based) | Verified | `reports_saas_security`, E2E |
+| Privacy: DSAR, export, retention, anonymisation | Implemented, API-only; Verified | `admin_privacy`; anonymisation scope is minimal; no legal review |
+| Demo mode (Greenwood, deterministic, idempotent, reset) | Verified | `seed`, E2E |
+| Custom fields/workflows, sports houses, laundry, duty rosters, cafeteria wallet, WhatsApp, SSO | Not started | |
+| QR/RFID/biometric input, device integrations | Not started | |
+| PDF generation, SaaS billing, tenant data deletion, monitoring | Not started | |
+| Sibling/emergency-contact UIs | Not started | |
+| Deployment: Docker, CI workflow, backup/restore | Docker/CI unverified; backup/restore Verified once | see `KNOWN_LIMITATIONS.md` |
+| Accessibility | Partial | automated axe WCAG2A/AA on key pages; no manual audit |
