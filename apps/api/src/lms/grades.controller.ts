@@ -82,7 +82,7 @@ export class GradesController {
       if (!s || !(await studentAccess(tx, a, s))) throw new NotFoundException({ error: 'not_found' });
       const scale = await this.scale(tx);
       const rows = (await tx.query(
-        `select om.assessment_name, om.marks, om.max_marks, c.title as course, sub.name as subject, ay.name as academic_year
+        `select om.assessment_name, coalesce((select new_marks from official_mark_corrections oc where oc.official_mark_id = om.id order by oc.id desc limit 1), om.marks) as marks, om.max_marks, (exists (select 1 from official_mark_corrections oc where oc.official_mark_id = om.id)) as revised, c.title as course, sub.name as subject, ay.name as academic_year
          from official_marks om join courses c on c.id = om.course_id join subjects sub on sub.id = c.subject_id join academic_years ay on ay.id = om.academic_year_id
          where om.student_id = $1 order by sub.name, om.published_at`, [id])).rows;
       const items = rows.map((r) => { const pct = Math.round((Number(r.marks) / Number(r.max_marks)) * 1000) / 10; return { ...r, marks: Number(r.marks), max_marks: Number(r.max_marks), percent: pct, grade: this.gradeFor(scale, pct) }; });

@@ -95,4 +95,40 @@ export class AuthService {
       return { mfaEnabled: true };
     });
   }
+
+  /** Public: always answers the same way so accounts cannot be enumerated. The token is only returned in demo mode (no email provider exists). */
+  async forgot(i: { tenant: string; email: string; ip?: string }) {
+    rateLimit(`forgot:${i.ip}`, 10);
+    const generic = { accepted: true, notice: 'If the account exists, reset instructions will be sent. Email delivery is not configured: ask a school administrator to issue a reset link.' };
+    const [t] = await this.db.raw('select id from tenants where slug = $1 and status = $2', [i.tenant, 'active']);
+    if (!t) return generic;
+    return this.db.withTenant(t.id, async (tx) => {
+      const { rows: [u] } = await tx.query(`select id from users where email = $1 and status in ('active','locked')`, [i.email]);
+      if (!u) return generic;
+      const token = await this.issueReset(tx, t.id, u.id, null);
+      await audit(tx, null, t.id, 'auth.reset_requested', 'user', u.id);
+      return process.env.DEMO_MODE === 'true' && process.env.NODE_ENV !== 'production' ? { ...generic, demoResetToken: token } : generic;
+    });
+  }
+
+  async issueReset(tx: import('../db/db.service').Tx, tenantId: string, userId: string, createdBy: string | null) {
+    await tx.query('update password_resets set used_at = now() where user_id = $1 and used_at is null', [userId]);
+    const token = randomToken();
+    await tx.query(`insert into password_resets(tenant_id, user_id, token_hash, expires_at, created_by) values ($1,$2,$3, now() + interval '1 hour', $4)`, [tenantId, userId, sha256(token), createdBy]);
+    return token;
+  }
+
+  async reset(i: { tenant: string; token: string; password: string }) {
+    if (i.password.length < PASSWORD_MIN) throw new BadRequestException({ error: 'weak_password', min: PASSWORD_MIN });
+    const [t] = await this.db.raw('select id from tenants where slug = $1 and status = $2', [i.tenant, 'active']);
+    if (!t) throw new BadRequestException({ error: 'invalid_reset' });
+    return this.db.withTenant(t.id, async (tx) => {
+      const { rows: [r] } = await tx.query('update password_resets set used_at = now() where token_hash = $1 and used_at is null and expires_at > now() returning user_id', [sha256(i.token)]);
+      if (!r) throw new BadRequestException({ error: 'invalid_reset' });
+      await tx.query(`update users set password_hash = $2, failed_attempts = 0, locked_until = null, status = case when status = 'locked' then 'active' else status end where id = $1`, [r.user_id, await hashPassword(i.password)]);
+      await tx.query('update sessions set revoked_at = now() where user_id = $1 and revoked_at is null', [r.user_id]);   // sign out everywhere
+      await audit(tx, null, t.id, 'auth.password_reset', 'user', r.user_id);
+      return { reset: true };
+    });
+  }
 }

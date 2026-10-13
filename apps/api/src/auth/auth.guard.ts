@@ -4,6 +4,7 @@ import { DbService } from '../db/db.service';
 import { sha256 } from '../common/crypto';
 import { ALLOW_NO_MFA, AuthContext, IS_PUBLIC } from '../common/http';
 import { PRIVILEGED } from '../common/permissions';
+import { FEATURE_BY_SEGMENT, featureEnabled } from '../common/entitlements';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -22,7 +23,7 @@ export class AuthGuard implements CanActivate {
 
     const auth = await this.db.withTenant(tenantId, async (tx) => {
       const s = await tx.query(
-        `select u.id, u.email, u.mfa_enabled from sessions s join users u on u.id = s.user_id
+        `select u.id, u.email, u.mfa_enabled, t.plan, t.features from sessions s join users u on u.id = s.user_id
          join tenants t on t.id = s.tenant_id
          where s.token_hash = $1 and s.revoked_at is null and s.expires_at > now()
            and u.status = 'active' and t.status = 'active'`,
@@ -35,6 +36,7 @@ export class AuthGuard implements CanActivate {
       );
       const grants = g.rows.map((r) => ({ permission: r.permission as string, campusId: r.campus_id as string | null }));
       return {
+        plan: s.rows[0].plan as string, features: s.rows[0].features as Record<string, boolean>,
         tenantId, userId: s.rows[0].id, email: s.rows[0].email, grants,
         mfaEnabled: s.rows[0].mfa_enabled,
         privileged: grants.some((x) => (PRIVILEGED as string[]).includes(x.permission)),
@@ -42,6 +44,8 @@ export class AuthGuard implements CanActivate {
       } as AuthContext;
     });
     if (!auth) throw new UnauthorizedException({ error: 'unauthenticated' });
+    const feature = FEATURE_BY_SEGMENT[(req.path as string).split('/')[1] ?? ''];
+    if (feature && !featureEnabled((auth as any).plan, (auth as any).features, feature)) throw new ForbiddenException({ error: 'feature_not_in_plan', feature });
     if (auth.privileged && !auth.mfaEnabled && !this.reflector.getAllAndOverride(ALLOW_NO_MFA, targets)) {
       throw new ForbiddenException({ error: 'mfa_setup_required' });
     }

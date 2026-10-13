@@ -27,11 +27,15 @@ import { InventoryController } from './inventory/inventory.controller';
 import { HrController } from './hr/hr.controller';
 import { HealthController } from './health/health.controller';
 import { SecurityController } from './security/security.controller';
+import { CampusLifeController } from './campus-life/campus-life.controller';
+import { CommsController } from './comms/comms.controller';
+import { SchedulingController } from './scheduling/scheduling.controller';
+import { ReportsController } from './reports/reports.controller';
 import { ErrorFilter } from './common/errors.filter';
 
 @Global()
 @Module({
-  controllers: [AuthController, PlatformController, AcademicsController, AdmissionsController, StudentsController, UsersController, DemoController, HostelController, IncidentsController, AttendanceController, DismissalController, NotificationsController, FinanceController, LmsController, QuizController, GradesController, FilesController, DashboardController, TransportController, LibraryController, InventoryController, HrController, HealthController, SecurityController],
+  controllers: [AuthController, PlatformController, AcademicsController, AdmissionsController, StudentsController, UsersController, DemoController, HostelController, IncidentsController, AttendanceController, DismissalController, NotificationsController, FinanceController, LmsController, QuizController, GradesController, FilesController, DashboardController, TransportController, LibraryController, InventoryController, HrController, HealthController, SecurityController, CampusLifeController, CommsController, SchedulingController, ReportsController],
   providers: [DbService, AuthService, { provide: APP_GUARD, useClass: AuthGuard }, { provide: APP_FILTER, useClass: ErrorFilter }],
   exports: [DbService],
 })

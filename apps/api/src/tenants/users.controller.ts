@@ -3,13 +3,14 @@ import { z } from 'zod';
 import { DbService } from '../db/db.service';
 import { Auth, AuthContext, needs, parse, pid, uuid } from '../common/http';
 import { audit } from '../common/audit';
+import { AuthService } from '../auth/auth.service';
 import { randomToken, sha256 } from '../common/crypto';
 
 const createUser = z.object({ email: z.string().email(), fullName: z.string().min(2), roleKey: z.string().min(1), campusId: uuid.nullable().default(null) });
 
 @Controller()
 export class UsersController {
-  constructor(private db: DbService) {}
+  constructor(private db: DbService, private auth: AuthService) {}
 
   @Post('users')
   create(@Auth() a: AuthContext, @Body() body: unknown) {
@@ -33,6 +34,20 @@ export class UsersController {
   auditLog(@Auth() a: AuthContext) {
     needs(a, 'audit.read');
     return this.db.withTenant(a.tenantId, async (tx) => (await tx.query('select id, actor_user_id, action, entity_type, entity_id, campus_id, details, at from audit_log order by id desc limit 200')).rows);
+  }
+
+  /** An administrator issues a one-hour reset token to hand to the user securely (no email provider configured). */
+  @Post('users/:id/reset-password')
+  resetPassword(@Auth() a: AuthContext, @Param('id') id: string) {
+    pid(id);
+    needs(a, 'user.manage');
+    return this.db.withTenant(a.tenantId, async (tx) => {
+      const u = await tx.query(`select id from users where id = $1 and status in ('active','locked')`, [id]);
+      if (!u.rowCount) throw new NotFoundException({ error: 'not_found' });
+      const token = await this.auth.issueReset(tx, a.tenantId, id, a.userId);
+      await audit(tx, a, a.tenantId, 'user.reset_issued', 'user', id);
+      return { resetToken: token, expiresInMinutes: 60 };
+    });
   }
 
   @Post('users/:id/disable')

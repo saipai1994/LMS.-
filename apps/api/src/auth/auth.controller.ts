@@ -16,6 +16,12 @@ export class AuthController {
   @Public() @Post('activate') @HttpCode(200)
   activate(@Body() b: unknown) { return this.svc.activate(parse(activateSchema, b)); }
 
+  @Public() @Post('forgot') @HttpCode(202)
+  forgot(@Body() b: unknown, @Req() req: any) { return this.svc.forgot({ ...parse(z.object({ tenant: z.string().min(2), email: z.string().email() }), b), ip: req.ip }); }
+
+  @Public() @Post('reset') @HttpCode(200)
+  reset(@Body() b: unknown) { return this.svc.reset(parse(activateSchema, b)); }
+
   @Post('logout') @HttpCode(204) @AllowWithoutMfa()
   async logout(@Auth() a: AuthContext, @Headers('authorization') h: string) { await this.svc.logout(a, h.slice(7)); }
 
