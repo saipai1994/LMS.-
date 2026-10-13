@@ -6,6 +6,7 @@ export const PERMISSIONS = [
   'course.manage', 'course.read_all',
   'hostel.manage', 'hostel.read', 'leave.approve', 'gate.record', 'rollcall.record',
   'incident.report', 'incident.manage', 'safeguarding.manage',
+  'attendance.manage', 'attendance.read', 'dismissal.record',
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -18,9 +19,9 @@ const ALL = [...PERMISSIONS];
 export const SYSTEM_ROLES: SystemRole[] = [
   { key: 'group_admin', name: 'School group administrator', permissions: ALL },
   { key: 'campus_admin', name: 'Campus administrator', permissions: ALL.filter((p) => p !== 'tenant.manage' && p !== 'safeguarding.manage') },
-  { key: 'principal', name: 'Principal', permissions: ['academic.read', 'admissions.read', 'student.read', 'course.read_all', 'audit.read', 'hostel.read', 'incident.manage'] },
+  { key: 'principal', name: 'Principal', permissions: ['academic.read', 'admissions.read', 'student.read', 'course.read_all', 'audit.read', 'hostel.read', 'incident.manage', 'attendance.read'] },
   { key: 'admissions_officer', name: 'Admissions officer', permissions: ['academic.read', 'admissions.read', 'admissions.write', 'admissions.decide', 'admissions.enroll', 'student.read'] },
-  { key: 'registrar', name: 'Registrar', permissions: ['academic.manage', 'academic.read', 'student.read', 'student.write', 'admissions.read'] },
+  { key: 'registrar', name: 'Registrar', permissions: ['academic.manage', 'academic.read', 'student.read', 'student.write', 'admissions.read', 'attendance.manage', 'attendance.read'] },
   { key: 'accountant', name: 'Accountant', permissions: [] },
   { key: 'teacher', name: 'Teacher and class teacher', permissions: ['academic.read', 'incident.report'] },
   { key: 'exam_coordinator', name: 'Examination coordinator', permissions: ['academic.read'] },
@@ -34,7 +35,7 @@ export const SYSTEM_ROLES: SystemRole[] = [
   { key: 'librarian', name: 'Librarian', permissions: [] },
   { key: 'inventory_manager', name: 'Inventory manager', permissions: [] },
   { key: 'hr_payroll', name: 'HR and payroll staff', permissions: [] },
-  { key: 'security_staff', name: 'Security and gate staff', permissions: ['student.read', 'gate.record', 'incident.report'] },
+  { key: 'security_staff', name: 'Security and gate staff', permissions: ['student.read', 'gate.record', 'incident.report', 'dismissal.record'] },
   { key: 'kitchen_manager', name: 'Kitchen manager', permissions: [] },
   { key: 'auditor', name: 'Auditor or read-only user', permissions: ['audit.read', 'academic.read', 'student.read', 'admissions.read', 'course.read_all'] },
 ];

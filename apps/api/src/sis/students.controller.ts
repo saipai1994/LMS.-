@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { DbService, Tx } from '../db/db.service';
 import { Auth, AuthContext, can, campusScope, needs, parse, pid, uuid } from '../common/http';
 import { audit } from '../common/audit';
+import { studentAccess } from './access';
 
 const residence = z.object({ residenceType: z.enum(['boarder', 'day_scholar']), effectiveFrom: z.string().date(), note: z.string().max(500).optional() });
 const transfer = z.object({ sectionId: uuid, effectiveFrom: z.string().date(), reason: z.string().max(500).optional() });
@@ -129,14 +130,7 @@ export class StudentsController {
     return s;
   }
 
-  /** Why may this actor see this student? Returns null when they may not. */
-  private async accessLevel(tx: Tx, a: AuthContext, s: { id: string; campus_id: string; user_id: string | null }): Promise<'staff' | 'guardian' | 'self' | 'teacher' | null> {
-    if (can(a, 'student.read', s.campus_id)) return 'staff';
-    if (s.user_id === a.userId) return 'self';
-    const g = await tx.query('select 1 from student_guardians sg join guardians g on g.id = sg.guardian_id where sg.student_id = $1 and g.user_id = $2', [s.id, a.userId]);
-    if (g.rowCount) return 'guardian';
-    const t = await tx.query(`select 1 from course_enrollments ce join courses c on c.id = ce.course_id where ce.student_id = $1 and c.teacher_user_id = $2 and ce.status = 'active'`, [s.id, a.userId]);
-    if (t.rowCount) return 'teacher';
-    return null;
+  private accessLevel(tx: Tx, a: AuthContext, s: { id: string; campus_id: string; user_id: string | null }) {
+    return studentAccess(tx, a, s);
   }
 }
