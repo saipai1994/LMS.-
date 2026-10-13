@@ -24,11 +24,14 @@ import { DashboardController } from './dashboard/dashboard.controller';
 import { TransportController } from './transport/transport.controller';
 import { LibraryController } from './library/library.controller';
 import { InventoryController } from './inventory/inventory.controller';
+import { HrController } from './hr/hr.controller';
+import { HealthController } from './health/health.controller';
+import { SecurityController } from './security/security.controller';
 import { ErrorFilter } from './common/errors.filter';
 
 @Global()
 @Module({
-  controllers: [AuthController, PlatformController, AcademicsController, AdmissionsController, StudentsController, UsersController, DemoController, HostelController, IncidentsController, AttendanceController, DismissalController, NotificationsController, FinanceController, LmsController, QuizController, GradesController, FilesController, DashboardController, TransportController, LibraryController, InventoryController],
+  controllers: [AuthController, PlatformController, AcademicsController, AdmissionsController, StudentsController, UsersController, DemoController, HostelController, IncidentsController, AttendanceController, DismissalController, NotificationsController, FinanceController, LmsController, QuizController, GradesController, FilesController, DashboardController, TransportController, LibraryController, InventoryController, HrController, HealthController, SecurityController],
   providers: [DbService, AuthService, { provide: APP_GUARD, useClass: AuthGuard }, { provide: APP_FILTER, useClass: ErrorFilter }],
   exports: [DbService],
 })
