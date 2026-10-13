@@ -37,3 +37,12 @@ export async function download(path: string, filename: string) {
   const url = URL.createObjectURL(await res.blob());
   const a = document.createElement('a'); a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url);
 }
+
+/** Opens an authenticated HTML document (report card, certificate) in a new tab, ready to print. */
+export async function openDocument(path: string) {
+  const token = getToken();
+  const res = await fetch(`/api${path}`, { headers: token ? { authorization: `Bearer ${token}` } : {} });
+  if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => null));
+  const url = URL.createObjectURL(new Blob([await res.text()], { type: 'text/html' }));
+  window.open(url, '_blank', 'noopener');
+}

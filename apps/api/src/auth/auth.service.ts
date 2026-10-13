@@ -25,7 +25,8 @@ export class AuthService {
   constructor(private db: DbService) {}
 
   async login(i: { tenant: string; email: string; password: string; mfaCode?: string; ip?: string }) {
-    rateLimit(`login:${i.ip}`, 30);
+    // Per-IP ceiling (schools share one NAT address, so it is generous); per-account lockout is the stronger control.
+    rateLimit(`login:${i.ip}`, Number(process.env.LOGIN_RATE_LIMIT_PER_MIN ?? 100));
     const [t] = await this.db.raw('select id, status from tenants where slug = $1', [i.tenant]);
     const invalid = new UnauthorizedException({ error: 'invalid_credentials' });
     if (!t || t.status !== 'active') throw invalid;

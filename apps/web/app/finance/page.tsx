@@ -38,6 +38,7 @@ function Staff() {
       <Async q={inv} what="invoices" empty={(d) => !d.length}>{(d) => <Table caption="Invoices" cols={[{ key: 'number', label: 'Invoice' }, { key: 'n', label: 'Student', render: (r) => `${r.first_name} ${r.last_name}` }, { key: 'due_date', label: 'Due', render: (r) => fmtDate(r.due_date) }, { key: 'total_minor', label: 'Total', align: 'right', render: (r) => money(r.total_minor) }, { key: 'outstanding_minor', label: 'Outstanding', align: 'right', render: (r) => money(r.outstanding_minor) }, { key: 'display_status', label: 'Status', render: (r) => <StatusBadge s={r.display_status} /> },
         { key: 'p', label: '', render: (r) => (s.can('finance.manage') && Number(r.outstanding_minor) > 0 ? <Button small variant="secondary" onClick={() => setPay(r)}>Record payment</Button> : null) }]} rows={d} />}</Async></Card>
     {pay && <RecordPayment inv={pay} onDone={() => { setPay(null); refresh(); }} />}
+    {(s.can('finance.manage') || s.can('finance.approve')) && <Policy />}
     <Card title="Reconciliation (today)"><Async q={rec} what="reconciliation">{(d) => <>
       <Table cols={[{ key: 'method', label: 'Method' }, { key: 'count', label: 'Payments' }, { key: 'total_minor', label: 'Total', align: 'right', render: (r) => money(r.total_minor) }]} rows={d.byMethod} empty="No payments recorded today." />
       <p>{d.discrepancies.length ? <span className="alert error">{d.discrepancies.length} ledger/invoice discrepancies</span> : '✔ Ledger agrees with invoices and payments for every student.'}</p></>}</Async></Card>
@@ -55,4 +56,18 @@ function RecordPayment({ inv, onDone }: { inv: any; onDone: () => void }) {
       <div className="row"><Input label="Amount (INR)" type="number" step="0.01" min="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} required /><Select label="Method" value={method} onChange={(e) => setMethod(e.target.value)} options={['cash', 'cheque', 'bank_transfer'].map((v) => ({ value: v, label: v.replace('_', ' ') }))} />
         <Button type="submit" busy={act.busy} disabled={!!receipt}>Record</Button><Button variant="secondary" onClick={onDone}>{receipt ? 'Done' : 'Cancel'}</Button></div>{act.node}
       {receipt && <p>Receipt <strong>{receipt.receiptNo}</strong> issued{receipt.idempotentReplay ? ' (already recorded — duplicate ignored)' : ''}.</p>}</form></Card>;
+}
+
+function Policy() {
+  const s = useSession();
+  const st = useAsync(() => api<any>('/finance/settings'));
+  const con = useAsync(() => api<any[]>('/finance/concessions'));
+  const act = useAction();
+  return <div className="grid g2">
+    <Card title="Fee policy & collections">{act.node}<Async q={st} what="policy">{(d) => <dl className="kv"><dt>Sibling discount</dt><dd>{Number(d.sibling_discount_percent)}% on {d.sibling_head_code}</dd><dt>Late fee</dt><dd>{money(d.late_fee_flat_minor)} after {d.late_fee_grace_days} days</dd></dl>}</Async>
+      <div className="row" style={{ marginTop: '.5rem' }}>
+        {s.can('finance.manage') && <Button variant="secondary" onClick={async () => { await act.run(async () => { const r = await api<any>('/finance/late-fees/apply', { body: {} }); void r; }, 'Late fees applied once per overdue invoice.'); }}>Apply late fees</Button>}
+        {s.can('finance.manage') && <Button variant="secondary" onClick={async () => { await act.run(async () => { const r = await api<any>('/finance/reminders', { body: { minDaysOverdue: 1 } }); void r; }, 'Reminders sent in-app (max one per child per week).'); }}>Send fee reminders</Button>}
+      </div></Card>
+    <Card title="Scholarships & concessions"><Async q={con} what="concessions" empty={(d) => !d.length}>{(d) => <Table cols={[{ key: 'n', label: 'Student', render: (r) => `${r.first_name} ${r.last_name}` }, { key: 'kind', label: 'Type' }, { key: 'v', label: 'Value', render: (r) => (r.basis === 'percent' ? `${r.value}%` : money(r.value * 100)) }, { key: 'status', label: 'Status', render: (r) => <StatusBadge s={r.status === 'active' ? 'approved' : 'rejected'} /> }]} rows={d.slice(0, 8)} />}</Async></Card></div>;
 }

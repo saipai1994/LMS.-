@@ -1,7 +1,7 @@
 import { defineConfig } from '@playwright/test';
 
 const DB = 'postgres://lms:lms_dev_pw@localhost:5432/lms_e2e';
-const env = { DATABASE_URL: DB, DEMO_MODE: 'true', DEMO_GATEWAY_SECRET: 'e2e-gateway-secret-0123456789', PLATFORM_BOOTSTRAP_TOKEN: 'e2e-platform-token-0123456789abcdef', PORT: '3001' };
+const env = { DATABASE_URL: DB, DEMO_MODE: 'true', DEMO_GATEWAY_SECRET: 'e2e-gateway-secret-0123456789', PLATFORM_BOOTSTRAP_TOKEN: 'e2e-platform-token-0123456789abcdef', PORT: '3001', LOGIN_RATE_LIMIT_PER_MIN: '1000' };
 
 export default defineConfig({
   testDir: './e2e',

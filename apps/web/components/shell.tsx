@@ -17,6 +17,9 @@ const NAV: NavItem[] = [
   { href: '/dismissal', label: 'Dismissal', show: (s) => s.can('dismissal.record') },
   { href: '/finance', label: 'Fees & finance', show: (s) => s.can('finance.read') || s.hasRole('parent') },
   { href: '/grades', label: 'Result approvals', show: (s) => s.can('grades.approve') },
+  { href: '/lifecycle', label: 'Promotion & exits', show: (s) => s.can('students.promote') || s.can('students.withdraw_approve') },
+  { href: '/consents', label: 'Consent forms', show: (s) => s.can('consents.manage') || s.hasRole('parent') },
+  { href: '/accounting', label: 'Accounting', show: (s) => s.can('accounting.read') },
   { href: '/incidents', label: 'Incidents', show: (s) => s.can('incident.report') || s.can('incident.manage') },
   { href: '/timetable', label: 'Timetable', show: (s) => s.can('academic.read') || s.hasRole('teacher', 'student', 'parent') },
   { href: '/exams', label: 'Examinations', show: (s) => s.can('academic.read') || s.hasRole('teacher', 'student', 'parent') },
@@ -43,10 +46,10 @@ export function Shell({ children }: { children: ReactNode }) {
   const [demo, setDemo] = useState<string | null>(null);
   useEffect(() => { api<{ banner: string }>('/demo/info').then((d) => setDemo(d.banner)).catch(() => setDemo(null)); }, []);
   useEffect(() => { setOpen(false); }, [path]);
-  useEffect(() => { if (!session.loading && !session.profile && path !== '/login') router.replace('/login'); }, [session.loading, session.profile, path, router]);
+  useEffect(() => { if (!session.loading && !session.profile && path !== '/login' && path !== '/offer') router.replace('/login'); }, [session.loading, session.profile, path, router]);
 
   const banner = demo ? <div className="demo-banner" role="note">{demo}</div> : null;
-  if (path === '/login') return <SessionCtx.Provider value={session}>{banner}{children}</SessionCtx.Provider>;
+  if (path === '/login' || path === '/offer') return <SessionCtx.Provider value={session}>{banner}{children}</SessionCtx.Provider>;
   if (session.loading || !session.profile) return <SessionCtx.Provider value={session}>{banner}<main id="main"><Loading what="your workspace" /></main></SessionCtx.Provider>;
 
   return (

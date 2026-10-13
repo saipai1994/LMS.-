@@ -33,6 +33,8 @@ export default function Hostel() {
       ]} rows={d} />}</Async></Card>
     {s.hasRole('parent') && <NewLeave onCreated={refresh} />}
     {s.can('rollcall.record') && <RollCall />}
+    {s.can('hostel.read') && <Upkeep />}
+    {s.hasRole('parent') && <Vacation />}
     {s.can('hostel.manage') && <Allocate />}
   </>;
 }
@@ -86,4 +88,22 @@ function Allocate() {
       <Select label="Hostel" value={hostelId} onChange={(e) => setHostelId(e.target.value)} required placeholder="Choose…" options={(hostels.data ?? []).map((h) => ({ value: h.id, label: `${h.name} — ${h.vacant} vacant` }))} />
       <Select label="Free bed" value={bedId} onChange={(e) => setBedId(e.target.value)} required placeholder="Choose…" options={(rooms.data ?? []).filter((r) => !r.student_id && !r.out_of_service).map((r) => ({ value: r.bed_id, label: `Room ${r.number} bed ${r.label}` }))} />
       <Button type="submit" busy={act.busy}>Allocate</Button></div>{act.node}</form>}</Async></Card>;
+}
+
+function Upkeep() {
+  const s = useSession();
+  const m = useAsync(() => api<any[]>('/hostel/maintenance'));
+  const ins = useAsync(() => api<any[]>('/hostel/inspections/overdue'));
+  const act = useAction();
+  return <div className="grid g2">
+    <Card title="Maintenance requests">{act.node}<Async q={m} what="requests" empty={(d) => !d.length}>{(d) => <Table cols={[{ key: 'description', label: 'Issue' }, { key: 'hostel', label: 'Hostel' }, { key: 'room', label: 'Room' }, { key: 'priority', label: 'Priority', render: (r) => <StatusBadge s={r.priority === 'urgent' ? 'critical' : r.priority === 'low' ? 'neutral' : 'pending'} /> }, { key: 'status', label: 'Status', render: (r) => <StatusBadge s={r.status === 'done' ? 'closed' : r.status === 'assigned' ? 'investigating' : 'open'} /> },
+      { key: 'a', label: '', render: (r) => (s.can('hostel.manage') && r.status !== 'done' ? <span className="row" style={{ gap: '.3rem' }}>{r.status === 'open' && <Button small variant="secondary" onClick={async () => { if (await act.run(() => api(`/hostel/maintenance/${r.id}/update`, { body: { status: 'assigned', assignedTo: 'Maintenance team' } }), 'Assigned to the maintenance team.')) m.reload(); }}>Assign</Button>}<Button small onClick={async () => { if (await act.run(() => api(`/hostel/maintenance/${r.id}/update`, { body: { status: 'done', note: 'Completed' } }), 'Marked done.')) m.reload(); }}>Done</Button></span> : null) }]} rows={d.slice(0, 10)} />}</Async></Card>
+    <Card title="Rooms not inspected in 14 days"><Async q={ins} what="inspections" empty={(d) => !d.length}>{(d) => <Table cols={[{ key: 'hostel', label: 'Hostel' }, { key: 'room', label: 'Room' }, { key: 'last_inspected', label: 'Last inspected', render: (r) => (r.last_inspected ? fmtDateTime(r.last_inspected) : 'never') }]} rows={d.slice(0, 10)} />}</Async></Card></div>;
+}
+function Vacation() {
+  const kids = useAsync(() => api<any[]>('/me/children'));
+  const [f, setF] = useState<any>({ arrangement: 'home' }); const act = useAction();
+  return <Card title="Vacation arrangements for a boarder"><Async q={kids} what="children" empty={(d) => !d.length}>{(d) => <form onSubmit={async (e) => { e.preventDefault(); await act.run(() => api('/hostel/vacation-plans', { body: { studentId: f.studentId, fromDate: f.from, toDate: f.to, arrangement: f.arrangement, contact: f.contact } }), 'Vacation plan saved.'); }}>
+    <div className="row"><Select label="Child" value={f.studentId ?? ''} onChange={(e) => setF({ ...f, studentId: e.target.value })} required placeholder="Choose…" options={d.map((k) => ({ value: k.id, label: `${k.first_name} ${k.last_name}` }))} /><Select label="Arrangement" value={f.arrangement} onChange={(e) => setF({ ...f, arrangement: e.target.value })} options={[{ value: 'home', label: 'Going home' }, { value: 'guardian', label: 'With another guardian' }, { value: 'school_stay', label: 'Staying at school' }]} /></div>
+    <div className="row"><Input label="From" type="date" value={f.from ?? ''} onChange={(e) => setF({ ...f, from: e.target.value })} required /><Input label="To" type="date" value={f.to ?? ''} onChange={(e) => setF({ ...f, to: e.target.value })} required /><Input label="Contact during vacation" value={f.contact ?? ''} onChange={(e) => setF({ ...f, contact: e.target.value })} required minLength={3} /><Button type="submit" busy={act.busy}>Save</Button></div>{act.node}</form>}</Async></Card>;
 }

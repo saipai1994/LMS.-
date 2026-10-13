@@ -20,7 +20,8 @@ function StudentView() {
       { key: 'marks', label: 'Marks', render: (r) => (r.marks != null ? `${Number(r.marks)}/${Number(r.max_marks)}` : '—') }, { key: 'feedback', label: 'Feedback' },
       { key: 'a', label: '', render: (r) => (r.status !== 'graded' ? <Button small onClick={() => setOpen(r)}>{r.status === 'submitted' ? 'Resubmit' : 'Open'}</Button> : null) }]} rows={d.assignments} />}</Async></Card>
     {open && <Submit a={open} onDone={() => { setOpen(null); work.reload(); }} />}
-    <Card title="Course lessons"><Async q={courses} what="courses" empty={(d) => !d.length}>{(d) => <><Select label="Course" value={courseId} onChange={(e) => setCourseId(e.target.value)} placeholder="Choose…" options={d.map((c) => ({ value: c.id, label: c.title }))} />{courseId && <Lessons id={courseId} />}</>}</Async></Card>
+    <Card title="Course lessons"><Async q={courses} what="courses" empty={(d) => !d.length}>{(d) => <><Select label="Course" value={courseId} onChange={(e) => setCourseId(e.target.value)} placeholder="Choose…" options={d.map((c) => ({ value: c.id, label: c.title }))} />{courseId && <><Lessons id={courseId} /></>}</>}</Async></Card>
+    {courseId && <Discussions courseId={courseId} staff={false} />}
   </>;
 }
 function Lessons({ id }: { id: string }) {
@@ -43,7 +44,7 @@ function TeacherView() {
   const courses = useAsync(() => api<any[]>('/me/courses').then((c) => c.filter((x) => x.teaching)));
   const [courseId, setCourseId] = useState('');
   return <><Card><Async q={courses} what="courses" empty={(d) => !d.length}>{(d) => <Select label="Course" value={courseId} onChange={(e) => setCourseId(e.target.value)} placeholder="Choose a course…" options={d.map((c) => ({ value: c.id, label: `${c.title} (${c.students} students)` }))} />}</Async></Card>
-    {courseId && <Course id={courseId} key={courseId} />}</>;
+    {courseId && <><Analytics courseId={courseId} /><Discussions courseId={courseId} staff /><Course id={courseId} key={courseId} /></>}</>;
 }
 function Course({ id }: { id: string }) {
   const asg = useAsync(() => api<any[]>(`/courses/${id}/assignments`), [id]);
@@ -67,4 +68,28 @@ function Submissions({ a, onChange }: { a: any; onChange: () => void }) {
   const act = useAction();
   return <Card title={`Submissions — ${a.title}`}><Async q={q} what="submissions" empty={(d) => !d.length}>{(d) => <Table cols={[{ key: 'n', label: 'Student', render: (r) => `${r.first_name} ${r.last_name}` }, { key: 'status', label: 'Status', render: (r) => <StatusBadge s={r.status === 'not_submitted' ? 'missing' : r.status} /> }, { key: 'is_late', label: 'Late', render: (r) => (r.is_late ? 'Yes' : '') }, { key: 'answer_text', label: 'Answer' },
     { key: 'g', label: 'Grade', render: (r) => (r.submission_id && r.status !== 'draft' ? <span className="row" style={{ gap: '.3rem' }}><input aria-label={`Marks for ${r.first_name}`} style={{ width: 80 }} type="number" min={0} max={Number(a.max_marks)} defaultValue={r.marks ?? ''} onChange={(e) => setMarks({ ...marks, [r.submission_id]: e.target.value })} /><Button small onClick={async () => { if (await act.run(() => api(`/submissions/${r.submission_id}/grade`, { body: { marks: Number(marks[r.submission_id] ?? r.marks) } }), 'Graded; guardians notified.')) { q.reload(); onChange(); } }}>Save</Button></span> : null) }]} rows={d} />}</Async>{act.node}</Card>;
+}
+
+function Discussions({ courseId, staff }: { courseId: string; staff: boolean }) {
+  const th = useAsync(() => api<any[]>(`/courses/${courseId}/threads`), [courseId]);
+  const [open, setOpen] = useState<string | null>(null);
+  const [title, setTitle] = useState('');
+  const act = useAction();
+  return <Card title="Discussions (moderated)">{act.node}
+    <Async q={th} what="threads" empty={(d) => !d.length}>{(d) => <Table cols={[{ key: 'title', label: 'Thread' }, { key: 'posts', label: 'Posts' }, { key: 'a', label: '', render: (r) => <Button small variant="secondary" onClick={() => setOpen(r.id)}>Open</Button> }]} rows={d} />}</Async>
+    {open && <Thread id={open} staff={staff} />}
+    {staff && <form onSubmit={async (e) => { e.preventDefault(); if (await act.run(() => api(`/courses/${courseId}/threads`, { body: { title } }), 'Thread opened.')) { setTitle(''); th.reload(); } }}><div className="row"><Input label="New thread" value={title} onChange={(e) => setTitle(e.target.value)} required minLength={3} /><Button type="submit" busy={act.busy}>Open thread</Button></div></form>}</Card>;
+}
+function Thread({ id, staff }: { id: string; staff: boolean }) {
+  const q = useAsync(() => api<any>(`/threads/${id}`), [id]);
+  const [body, setBody] = useState(''); const act = useAction();
+  return <div style={{ marginTop: '.75rem' }}><Async q={q} what="thread">{(t) => <><h3>{t.title}</h3><ul className="timeline">{t.posts.map((p: any) => <li key={p.id}><strong>{p.author}</strong>: {p.body} {p.status !== 'approved' && <StatusBadge s={p.status === 'pending' ? 'pending' : 'rejected'} />}
+    {staff && p.status === 'pending' && <> <Button small onClick={async () => { if (await act.run(() => api(`/posts/${p.id}/moderate`, { body: { action: 'approve' } }), 'Approved.')) q.reload(); }}>Approve</Button> <Button small variant="danger" onClick={async () => { if (await act.run(() => api(`/posts/${p.id}/moderate`, { body: { action: 'remove' } }), 'Removed.')) q.reload(); }}>Remove</Button></>}</li>)}</ul>
+    <form onSubmit={async (e) => { e.preventDefault(); if (await act.run(() => api(`/threads/${id}/posts`, { body: { body } }), staff ? 'Posted.' : 'Posted — visible to others once your teacher approves it.')) { setBody(''); q.reload(); } }}><div className="row"><Input label="Add to the discussion" value={body} onChange={(e) => setBody(e.target.value)} required /><Button type="submit" busy={act.busy}>Post</Button></div>{act.node}</form></>}</Async></div>;
+}
+function Analytics({ courseId }: { courseId: string }) {
+  const q = useAsync(() => api<any>(`/courses/${courseId}/analytics`), [courseId]);
+  const risk = useAsync(() => api<any[]>(`/courses/${courseId}/at-risk`), [courseId]);
+  return <div className="grid g2"><Card title="Course engagement"><Async q={q} what="analytics">{(d) => <div className="grid g4"><div className="stat"><div className="stat-v">{d.lessonCompletionPercent ?? '—'}%</div><div className="stat-l">lessons completed</div></div><div className="stat"><div className="stat-v">{d.submissionRatePercent ?? '—'}%</div><div className="stat-l">homework submitted</div></div><div className="stat"><div className="stat-v">{d.averageGradePercent ?? '—'}%</div><div className="stat-l">average grade</div></div></div>}</Async></Card>
+    <Card title="Students who may need support"><Async q={risk} what="students" empty={(d) => !d.length}>{(d) => <Table cols={[{ key: 'n', label: 'Student', render: (r) => `${r.first_name} ${r.last_name}` }, { key: 'average_percent', label: 'Avg %', render: (r) => r.average_percent ?? '—' }, { key: 'missing', label: 'Missing work' }]} rows={d} />}</Async></Card></div>;
 }

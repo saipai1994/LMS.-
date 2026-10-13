@@ -41,7 +41,7 @@ describe('auth & tenant onboarding', () => {
     expect(rows.length).toBe(5);
   });
   it('rate limits login by IP', async () => {
-    for (let i = 0; i < 30; i++) await http(app).post('/auth/login').send({ tenant: 'nope', email: 'a@b.co', password: 'x' });
+    for (let i = 0; i < 100; i++) await http(app).post('/auth/login').send({ tenant: 'nope', email: 'a@b.co', password: 'x' });
     await http(app).post('/auth/login').send({ tenant: 'nope', email: 'a@b.co', password: 'x' }).expect(429);
   });
 });
