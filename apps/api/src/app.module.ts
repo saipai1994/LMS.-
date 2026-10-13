@@ -16,11 +16,15 @@ import { AttendanceController } from './attendance/attendance.controller';
 import { DismissalController } from './dismissal/dismissal.controller';
 import { NotificationsController } from './notifications/notifications.controller';
 import { FinanceController } from './finance/finance.controller';
+import { LmsController } from './lms/lms.controller';
+import { QuizController } from './lms/quiz.controller';
+import { GradesController } from './lms/grades.controller';
+import { FilesController } from './lms/files.controller';
 import { ErrorFilter } from './common/errors.filter';
 
 @Global()
 @Module({
-  controllers: [AuthController, PlatformController, AcademicsController, AdmissionsController, StudentsController, UsersController, DemoController, HostelController, IncidentsController, AttendanceController, DismissalController, NotificationsController, FinanceController],
+  controllers: [AuthController, PlatformController, AcademicsController, AdmissionsController, StudentsController, UsersController, DemoController, HostelController, IncidentsController, AttendanceController, DismissalController, NotificationsController, FinanceController, LmsController, QuizController, GradesController, FilesController],
   providers: [DbService, AuthService, { provide: APP_GUARD, useClass: AuthGuard }, { provide: APP_FILTER, useClass: ErrorFilter }],
   exports: [DbService],
 })

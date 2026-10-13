@@ -8,6 +8,7 @@ export const PERMISSIONS = [
   'incident.report', 'incident.manage', 'safeguarding.manage',
   'attendance.manage', 'attendance.read', 'dismissal.record',
   'finance.manage', 'finance.read', 'finance.approve',
+  'grades.approve',
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -22,10 +23,10 @@ export const SYSTEM_ROLES: SystemRole[] = [
   { key: 'campus_admin', name: 'Campus administrator', permissions: ALL.filter((p) => p !== 'tenant.manage' && p !== 'safeguarding.manage') },
   { key: 'principal', name: 'Principal', permissions: ['academic.read', 'admissions.read', 'student.read', 'course.read_all', 'audit.read', 'hostel.read', 'incident.manage', 'attendance.read', 'finance.read', 'finance.approve'] },
   { key: 'admissions_officer', name: 'Admissions officer', permissions: ['academic.read', 'admissions.read', 'admissions.write', 'admissions.decide', 'admissions.enroll', 'student.read'] },
-  { key: 'registrar', name: 'Registrar', permissions: ['academic.manage', 'academic.read', 'student.read', 'student.write', 'admissions.read', 'attendance.manage', 'attendance.read'] },
+  { key: 'registrar', name: 'Registrar', permissions: ['academic.manage', 'academic.read', 'student.read', 'student.write', 'admissions.read', 'attendance.manage', 'attendance.read', 'grades.approve'] },
   { key: 'accountant', name: 'Accountant', permissions: ['student.read', 'finance.manage', 'finance.read', 'academic.read'] },
   { key: 'teacher', name: 'Teacher and class teacher', permissions: ['academic.read', 'incident.report'] },
-  { key: 'exam_coordinator', name: 'Examination coordinator', permissions: ['academic.read'] },
+  { key: 'exam_coordinator', name: 'Examination coordinator', permissions: ['academic.read', 'grades.approve', 'student.read'] },
   { key: 'lms_admin', name: 'LMS administrator', permissions: ['academic.read', 'course.manage', 'course.read_all'] },
   { key: 'student', name: 'Student', permissions: [] },
   { key: 'parent', name: 'Parent or guardian', permissions: [] },

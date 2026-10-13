@@ -4,6 +4,7 @@ import { DbService, Tx } from '../db/db.service';
 import { Auth, AuthContext, can, campusScope, needs, parse, pid, uuid } from '../common/http';
 import { audit } from '../common/audit';
 import { studentAccess } from './access';
+import { randomToken, sha256 } from '../common/crypto';
 
 const residence = z.object({ residenceType: z.enum(['boarder', 'day_scholar']), effectiveFrom: z.string().date(), note: z.string().max(500).optional() });
 const transfer = z.object({ sectionId: uuid, effectiveFrom: z.string().date(), reason: z.string().max(500).optional() });
@@ -109,6 +110,23 @@ export class StudentsController {
                       on conflict (course_id, student_id) do update set status = 'active'`, [a.tenantId, id, sec.id]);
       await audit(tx, a, a.tenantId, 'student.section_transfer', 'student', id, s.campus_id, { from: cur?.section_id, to: sec.id });
       return { transferred: true };
+    });
+  }
+
+  /** Creates a student-portal login linked to the student (invite token returned; no email provider configured). */
+  @Post('students/:id/account')
+  createAccount(@Auth() a: AuthContext, @Param('id') id: string, @Body() body: unknown) {
+    pid(id);
+    const { email } = parse(z.object({ email: z.string().email() }), body);
+    return this.db.withTenant(a.tenantId, async (tx) => {
+      const s = await this.staffStudent(tx, a, id, 'student.write');
+      if (s.user_id) throw new ConflictException({ error: 'account_exists' });
+      const invite = randomToken();
+      const { rows: [u] } = await tx.query(`insert into users(tenant_id, email, full_name, status, invite_token_hash, invite_expires_at) values ($1,$2,$3,'invited',$4, now() + interval '7 days') returning id`, [a.tenantId, email, `${s.first_name} ${s.last_name}`, sha256(invite)]);
+      await tx.query(`insert into user_roles(tenant_id, user_id, role_id) select $1, $2, id from roles where key = 'student'`, [a.tenantId, u.id]);
+      await tx.query('update students set user_id = $2 where id = $1', [id, u.id]);
+      await audit(tx, a, a.tenantId, 'student.account_create', 'student', id, s.campus_id);
+      return { userId: u.id, inviteToken: invite, notice: 'Email delivery is not configured; deliver the invite token securely.' };
     });
   }
 
