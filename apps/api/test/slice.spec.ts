@@ -94,7 +94,7 @@ describe('admission → enrollment → LMS → parent visibility (vertical slice
     ids.app = created.id;
     await http(app).post(`/admissions/${ids.app}/enroll`).set(auth(ids.officerTok)).send({ sectionId: ids.secA }).expect(409); // not accepted
     for (const to of ['under_review', 'offered', 'accepted'])
-      await http(app).post(`/admissions/${ids.app}/transition`).set(auth(ids.officerTok)).send({ to }).expect(201);
+      await http(app).post(`/admissions/${ids.app}/transition`).set(auth(ids.officerTok)).send({ to, ...(to === 'accepted' ? { consentRef: 'paper form' } : {}) }).expect(201);
     await http(app).post(`/admissions/${ids.app}/transition`).set(auth(ids.officerTok)).send({ to: 'under_review' }).expect(409);
     await http(app).post(`/admissions/${ids.app}/enroll`).set(auth(ids.teacherTok)).send({ sectionId: ids.secA }).expect(403);
     const e = (await http(app).post(`/admissions/${ids.app}/enroll`).set(auth(ids.officerTok)).send({ sectionId: ids.secA, effectiveFrom: '2026-04-01' }).expect(201)).body;
@@ -109,7 +109,7 @@ describe('admission → enrollment → LMS → parent visibility (vertical slice
 
   it('enforces section capacity', async () => {
     const c2 = (await http(app).post('/admissions').set(auth(ids.officerTok)).send({ ...app_(), applicantFirstName: 'Second', guardianEmail: 'second@example.test' }).expect(201)).body;
-    for (const to of ['under_review', 'offered', 'accepted']) await http(app).post(`/admissions/${c2.id}/transition`).set(auth(ids.officerTok)).send({ to }).expect(201);
+    for (const to of ['under_review', 'offered', 'accepted']) await http(app).post(`/admissions/${c2.id}/transition`).set(auth(ids.officerTok)).send({ to, ...(to === 'accepted' ? { consentRef: 'paper form' } : {}) }).expect(201);
     await http(app).post(`/admissions/${c2.id}/enroll`).set(auth(ids.officerTok)).send({ sectionId: ids.secA }).expect(409).expect((r: any) => expect(r.body.error).toBe('section_full'));
   });
 
@@ -126,7 +126,7 @@ describe('admission → enrollment → LMS → parent visibility (vertical slice
     await http(app).get('/students').set(auth(parentToken)).expect(403); // no staff list access
     // an unrelated parent cannot see the child
     const other = (await http(app).post('/admissions').set(auth(ids.officerTok)).send({ ...app_(), applicantFirstName: 'Other', guardianEmail: 'other@example.test' }).expect(201)).body;
-    for (const to of ['under_review', 'offered', 'accepted']) await http(app).post(`/admissions/${other.id}/transition`).set(auth(ids.officerTok)).send({ to }).expect(201);
+    for (const to of ['under_review', 'offered', 'accepted']) await http(app).post(`/admissions/${other.id}/transition`).set(auth(ids.officerTok)).send({ to, ...(to === 'accepted' ? { consentRef: 'paper form' } : {}) }).expect(201);
     const oe = (await http(app).post(`/admissions/${other.id}/enroll`).set(auth(ids.officerTok)).send({ sectionId: ids.secB }).expect(201)).body;
     await activate(app, 'alpha', oe.parentInviteToken);
     otherParentToken = await login(app, 'alpha', 'other@example.test');

@@ -1,4 +1,4 @@
-import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, Headers, HttpCode, NotFoundException, Param, Post, Query, Req, ServiceUnavailableException, UnprocessableEntityException } from '@nestjs/common';
+import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, Headers, HttpCode, NotFoundException, Param, Post, Put, Query, Req, ServiceUnavailableException, UnprocessableEntityException } from '@nestjs/common';
 import { createHash, createHmac, timingSafeEqual } from 'crypto';
 import { z } from 'zod';
 import { DbService, Tx } from '../db/db.service';
@@ -9,7 +9,13 @@ import { guardianUserIds, isGuardianOf, notify, studentAccess } from '../sis/acc
 const money = z.number().int().positive().max(1_000_000_000_00); // minor units
 const headS = z.object({ code: z.string().min(1).max(30), name: z.string().min(1).max(100) });
 const structS = z.object({ academicYearId: uuid, gradeLevelId: uuid, residenceType: z.enum(['boarder', 'day_scholar']).nullable().default(null), headId: uuid, amountMinor: money });
-const genS = z.object({ academicYearId: uuid, dueDate: z.string().date(), batchKey: z.string().min(1).max(50), studentIds: z.array(uuid).max(1000).optional() });
+const genS = z.object({
+  academicYearId: uuid, dueDate: z.string().date(), batchKey: z.string().min(1).max(50), studentIds: z.array(uuid).max(1000).optional(),
+  /** Split each invoice into instalments: percentages must total 100. Each instalment becomes its own invoice (batch key suffixed). */
+  installments: z.array(z.object({ suffix: z.string().regex(/^[A-Za-z0-9]{1,10}$/), dueDate: z.string().date(), percent: z.number().positive().max(100) })).min(2).max(12).optional(),
+}).refine((v) => !v.installments || Math.abs(v.installments.reduce((t, i) => t + i.percent, 0) - 100) < 0.001, { message: 'installment percentages must total 100' });
+const settingsS = z.object({ siblingDiscountPercent: z.number().min(0).max(100), siblingHeadCode: z.string().min(1).max(30).default('TUI'), lateFeeFlatMinor: z.number().int().min(0), lateFeeGraceDays: z.number().int().min(0).max(120) });
+const concessionS = z.object({ studentId: uuid, academicYearId: uuid, kind: z.enum(['scholarship', 'concession', 'staff_ward']), basis: z.enum(['percent', 'fixed']), value: z.number().positive(), headCode: z.string().max(30).optional(), reason: z.string().min(5).max(300) }).refine((v) => v.basis !== 'percent' || v.value <= 100, { message: 'percent must be <= 100' });
 const manualS = z.object({ studentId: uuid, dueDate: z.string().date(), lines: z.array(z.object({ description: z.string().min(1).max(200), amountMinor: money })).min(1).max(30) });
 const payS = z.object({ studentId: uuid, invoiceId: uuid.optional(), amountMinor: money, method: z.enum(['cash', 'cheque', 'bank_transfer']), reference: z.string().max(100).optional(), idempotencyKey: z.string().min(8).max(100) });
 const adjS = z.object({ amountMinor: money, reason: z.string().min(3).max(300) });
@@ -78,10 +84,27 @@ export class FinanceController {
           `select fs.head_id, h.name, fs.amount_minor from fee_structures fs join fee_heads h on h.id = fs.head_id
            where fs.academic_year_id = $1 and fs.grade_level_id = $2 and (fs.residence_type is null or fs.residence_type = $3) order by h.code`, [b.academicYearId, s.grade_level_id, s.residence_type])).rows;
         if (!lines.length) { skippedNoFees++; continue; }
-        const exists = await tx.query('select 1 from invoices where student_id = $1 and batch_key = $2', [s.id, b.batchKey]);
-        if (exists.rowCount) { skippedExisting++; continue; }
-        await this.createInvoice(tx, a, s.id, b.dueDate, lines.map((l) => ({ description: l.name, headId: l.head_id, amountMinor: Number(l.amount_minor) })), b.batchKey);
-        created++;
+        const parts = b.installments ?? [{ suffix: '', dueDate: b.dueDate, percent: 100 }];
+        let doneAny = false, skippedAll = true;
+        const before = lines.map((l) => ({ description: l.name, headId: l.head_id as string, amountMinor: Number(l.amount_minor) }));
+        const allocated = before.map(() => 0);
+        for (let k = 0; k < parts.length; k++) {
+          const part = parts[k];
+          const batch = part.suffix ? `${b.batchKey}-${part.suffix}` : b.batchKey;
+          const last = k === parts.length - 1;
+          const scaled = before.map((l, i) => {
+            const amt = last ? l.amountMinor - allocated[i] : Math.max(1, Math.round((l.amountMinor * part.percent) / 100));
+            allocated[i] += amt;
+            return { ...l, amountMinor: amt };
+          }).filter((l) => l.amountMinor > 0);
+          const exists = await tx.query('select 1 from invoices where student_id = $1 and batch_key = $2', [s.id, batch]);
+          if (exists.rowCount) continue;
+          skippedAll = false;
+          const inv = await this.createInvoice(tx, a, s.id, part.dueDate, scaled, batch);
+          await this.applyDiscounts(tx, a, s.id, b.academicYearId, inv.id, scaled, part.percent);
+          doneAny = true;
+        }
+        if (doneAny) created++; else if (skippedAll) skippedExisting++;
       }
       await audit(tx, a, a.tenantId, 'finance.invoices_generated', 'academic_year', b.academicYearId, null, { batchKey: b.batchKey, created, skippedExisting, skippedNoFees });
       return { created, skippedExisting, skippedNoFees };
@@ -360,7 +383,123 @@ export class FinanceController {
     });
   }
 
+  // ---------- policy: sibling discount, late fees ----------
+  @Put('settings')
+  setSettings(@Auth() a: AuthContext, @Body() body: unknown) {
+    needs(a, 'finance.approve'); const b = parse(settingsS, body);
+    return this.db.withTenant(a.tenantId, async (tx) => {
+      await tx.query(`insert into fee_settings(tenant_id, sibling_discount_percent, sibling_head_code, late_fee_flat_minor, late_fee_grace_days, configured_by) values ($1,$2,$3,$4,$5,$6)
+        on conflict (tenant_id) do update set sibling_discount_percent = excluded.sibling_discount_percent, sibling_head_code = excluded.sibling_head_code, late_fee_flat_minor = excluded.late_fee_flat_minor, late_fee_grace_days = excluded.late_fee_grace_days, configured_by = excluded.configured_by`,
+        [a.tenantId, b.siblingDiscountPercent, b.siblingHeadCode, b.lateFeeFlatMinor, b.lateFeeGraceDays, a.userId]);
+      await audit(tx, a, a.tenantId, 'finance.settings', 'tenant', a.tenantId, null, b as any);
+      return b;
+    });
+  }
+  @Get('settings')
+  getSettings(@Auth() a: AuthContext) {
+    needs(a, 'finance.read');
+    return this.db.withTenant(a.tenantId, async (tx) => (await tx.query('select sibling_discount_percent, sibling_head_code, late_fee_flat_minor, late_fee_grace_days from fee_settings')).rows[0] ?? { sibling_discount_percent: 0, sibling_head_code: 'TUI', late_fee_flat_minor: 0, late_fee_grace_days: 7 });
+  }
+
+  @Post('concessions')
+  addConcession(@Auth() a: AuthContext, @Body() body: unknown) {
+    const b = parse(concessionS, body);
+    return this.db.withTenant(a.tenantId, async (tx) => {
+      const { rows: [s] } = await tx.query('select id, campus_id from students where id = $1', [b.studentId]);
+      if (!s || !can(a, 'finance.approve', s.campus_id)) throw new NotFoundException({ error: 'not_found' });
+      if (b.headCode && !(await tx.query('select 1 from fee_heads where code = $1', [b.headCode])).rowCount) throw new UnprocessableEntityException({ error: 'unknown_fee_head' });
+      const r = (await tx.query('insert into student_concessions(tenant_id, student_id, academic_year_id, kind, basis, value, head_code, reason, approved_by) values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning id, kind, basis, value', [a.tenantId, s.id, b.academicYearId, b.kind, b.basis, b.value, b.headCode ?? null, b.reason, a.userId])).rows[0];
+      await audit(tx, a, a.tenantId, 'finance.concession_add', 'student', s.id, s.campus_id, { kind: b.kind, basis: b.basis, value: b.value });
+      return r;
+    });
+  }
+  @Post('concessions/:id/revoke')
+  revokeConcession(@Auth() a: AuthContext, @Param('id') id: string) {
+    pid(id);
+    return this.db.withTenant(a.tenantId, async (tx) => {
+      const { rows: [c] } = await tx.query('select c.*, s.campus_id from student_concessions c join students s on s.id = c.student_id where c.id = $1', [id]);
+      if (!c || !can(a, 'finance.approve', c.campus_id)) throw new NotFoundException({ error: 'not_found' });
+      if (c.status === 'revoked') throw new ConflictException({ error: 'already_revoked' });
+      await tx.query(`update student_concessions set status = 'revoked' where id = $1`, [id]);
+      await audit(tx, a, a.tenantId, 'finance.concession_revoke', 'student', c.student_id, c.campus_id);
+      return { revoked: true };
+    });
+  }
+  @Get('concessions')
+  concessions(@Auth() a: AuthContext, @Query('studentId') studentId?: string) {
+    needs(a, 'finance.read'); const scope = campusScope(a, 'finance.read');
+    return this.db.withTenant(a.tenantId, async (tx) => (await tx.query(`select c.id, c.kind, c.basis, c.value, c.head_code, c.reason, c.status, s.first_name, s.last_name, s.admission_no from student_concessions c join students s on s.id = c.student_id where ($1::uuid[] is null or s.campus_id = any($1)) and ($2::uuid is null or c.student_id = $2) order by c.created_at desc`, [scope, studentId ? parse(uuid, studentId) : null])).rows.map((r) => ({ ...r, value: Number(r.value) })));
+  }
+
+  /** Adds one late-fee invoice per overdue invoice (idempotent through the batch key). */
+  @Post('late-fees/apply')
+  lateFees(@Auth() a: AuthContext, @Body() body: unknown) {
+    needs(a, 'finance.manage'); const { asOf } = parse(z.object({ asOf: z.string().date().optional() }), body);
+    return this.db.withTenant(a.tenantId, async (tx) => {
+      const st = (await tx.query('select * from fee_settings')).rows[0];
+      if (!st || Number(st.late_fee_flat_minor) <= 0) throw new UnprocessableEntityException({ error: 'late_fee_not_configured' });
+      const date = asOf ?? new Date().toISOString().slice(0, 10);
+      const due = (await tx.query(`select q.id, q.number, q.student_id, s.campus_id from (${INVOICE_SQL}) q join students s on s.id = q.student_id
+        where q.status <> 'void' and q.outstanding_minor > 0 and q.due_date + $1::int < $2::date and q.number not like 'LATE-%' and not exists (select 1 from invoices x where x.student_id = q.student_id and x.batch_key = 'late:' || q.number)`, [st.late_fee_grace_days, date])).rows;
+      let created = 0;
+      for (const d of due) {
+        if (!can(a, 'finance.manage', d.campus_id)) continue;
+        const inv = await this.createInvoice(tx, a, d.student_id, new Date(Date.parse(date) + 7 * 86400000).toISOString().slice(0, 10), [{ description: `Late fee for ${d.number}`, headId: null, amountMinor: Number(st.late_fee_flat_minor) }], `late:${d.number}`);
+        void inv; created++;
+      }
+      await audit(tx, a, a.tenantId, 'finance.late_fees', 'tenant', a.tenantId, null, { created, asOf: date });
+      return { created };
+    });
+  }
+
+  /** In-app reminders to guardians of overdue invoices; at most one per student per 7 days. */
+  @Post('reminders')
+  reminders(@Auth() a: AuthContext, @Body() body: unknown) {
+    needs(a, 'finance.manage'); const { minDaysOverdue } = parse(z.object({ minDaysOverdue: z.number().int().min(0).max(365).default(1) }), body);
+    return this.db.withTenant(a.tenantId, async (tx) => {
+      const rows = (await tx.query(`select q.student_id, s.first_name, s.campus_id, sum(q.outstanding_minor)::bigint as due, count(*)::int as n from (${INVOICE_SQL}) q join students s on s.id = q.student_id
+        where q.status <> 'void' and q.outstanding_minor > 0 and current_date - q.due_date >= $1 group by q.student_id, s.first_name, s.campus_id`, [minDaysOverdue])).rows;
+      let sent = 0, skipped = 0;
+      for (const r of rows) {
+        if (!can(a, 'finance.manage', r.campus_id)) continue;
+        const users = await guardianUserIds(tx, r.student_id);
+        const recent = users.length ? await tx.query(`select 1 from notifications where user_id = any($1) and kind = 'finance.reminder' and body like $2 and created_at > now() - interval '7 days'`, [users, `${r.first_name}:%`]) : { rowCount: 0 };
+        if (recent.rowCount) { skipped++; continue; }
+        await notify(tx, a.tenantId, users, 'finance.reminder', 'Fee reminder', `${r.first_name}: ${r.n} invoice(s) overdue, total ₹${Number(r.due) / 100}. Please pay or contact the accounts office.`);
+        sent++;
+      }
+      await audit(tx, a, a.tenantId, 'finance.reminders', 'tenant', a.tenantId, null, { sent, skipped });
+      return { sent, skipped };
+    });
+  }
+
   // ---------- helpers ----------
+  /** Applies approved concessions and the sibling rule as credits on a freshly generated invoice (never exceeding the invoice total). */
+  private async applyDiscounts(tx: Tx, a: AuthContext, studentId: string, yearId: string, invoiceId: string, lines: { description: string; headId: string | null; amountMinor: number }[], partPercent: number) {
+    const total = lines.reduce((t, l) => t + l.amountMinor, 0);
+    const heads = new Map((await tx.query('select id, code from fee_heads')).rows.map((r) => [r.id as string, r.code as string]));
+    const baseFor = (code: string | null) => lines.filter((l) => !code || heads.get(l.headId ?? '') === code).reduce((t, l) => t + l.amountMinor, 0);
+    const credits: { amount: number; reason: string; by: string; source: 'concession' | 'sibling_discount' }[] = [];
+    for (const c of (await tx.query(`select * from student_concessions where student_id = $1 and academic_year_id = $2 and status = 'active' order by created_at`, [studentId, yearId])).rows) {
+      const base = baseFor(c.head_code);
+      const amt = c.basis === 'percent' ? Math.round((base * Number(c.value)) / 100) : Math.min(base, Math.round((Number(c.value) * 100 * partPercent) / 100));
+      if (amt > 0) credits.push({ amount: amt, reason: `${c.kind}: ${c.reason}`, by: c.approved_by, source: 'concession' });
+    }
+    const st = (await tx.query('select * from fee_settings')).rows[0];
+    if (st && Number(st.sibling_discount_percent) > 0) {
+      const sib = await tx.query(`select 1 from student_guardians mine join student_guardians other on other.guardian_id = mine.guardian_id and other.student_id <> mine.student_id join students o on o.id = other.student_id join students me on me.id = mine.student_id
+        where mine.student_id = $1 and o.status = 'active' and o.admission_no < me.admission_no limit 1`, [studentId]);
+      if (sib.rowCount) { const amt = Math.round((baseFor(st.sibling_head_code) * Number(st.sibling_discount_percent)) / 100); if (amt > 0) credits.push({ amount: amt, reason: `Sibling discount ${st.sibling_discount_percent}%`, by: st.configured_by ?? a.userId, source: 'sibling_discount' }); }
+    }
+    let remaining = total;
+    for (const c of credits) {
+      const amt = Math.min(c.amount, remaining - 1);          // an invoice never drops to zero through discounts alone
+      if (amt <= 0) continue;
+      remaining -= amt;
+      await tx.query('insert into invoice_adjustments(tenant_id, invoice_id, amount_minor, reason, approved_by, source) values ($1,$2,$3,$4,$5,$6)', [a.tenantId, invoiceId, amt, c.reason, c.by, c.source]);
+      await tx.query(`insert into ledger_entries(tenant_id, student_id, kind, ref_id, credit_minor, description) values ($1,$2,'credit_note',$3,$4,$5)`, [a.tenantId, studentId, invoiceId, amt, c.reason]);
+    }
+  }
   private async createInvoice(tx: Tx, a: { tenantId: string; userId: string }, studentId: string, dueDate: string, lines: { description: string; headId: string | null; amountMinor: number }[], batchKey: string | null) {
     const total = lines.reduce((t, l) => t + l.amountMinor, 0);
     const { rows: [seq] } = await tx.query(`insert into document_sequences(tenant_id, key, prefix, next_value) values ($1,'invoice','INV-',2) on conflict (tenant_id, key) do update set next_value = document_sequences.next_value + 1 returning prefix, next_value - 1 as v`, [a.tenantId]);

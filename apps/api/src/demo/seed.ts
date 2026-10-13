@@ -162,9 +162,11 @@ export async function seedDemo(db: DbService): Promise<SeedResult> {
       ['Zayan', 'Ahmed', 'under_review', 'day_scholar', 'zayan.parent@example.test'], ['Tanvi', 'Shetty', 'submitted', 'boarder', 'tanvi.parent@example.test'],
       ['Kunal', 'Arora', 'waitlisted', 'day_scholar', 'kunal.parent@example.test'],
     ];
-    for (const [f, l, status, res, em] of apps)
-      await q(`insert into admission_applications(tenant_id, campus_id, academic_year_id, grade_level_id, applicant_first_name, applicant_last_name, applicant_dob, guardian_name, guardian_email, guardian_phone, residence_preference, status)
-               values ($1,$2,$3,$4,$5,$6,'2014-08-15',$7,$8,'+91-98000-00000',$9,$10)`, [t.id, campus.id, year.id, g7.id, f, l, `Parent of ${f} ${l}`, em, res, status]);
+    for (const [f, l, status, res, em] of apps) {
+      const [ap] = await q(`insert into admission_applications(tenant_id, campus_id, academic_year_id, grade_level_id, applicant_first_name, applicant_last_name, applicant_dob, guardian_name, guardian_email, guardian_phone, residence_preference, status)
+               values ($1,$2,$3,$4,$5,$6,'2014-08-15',$7,$8,'+91-98000-00000',$9,$10) returning id`, [t.id, campus.id, year.id, g7.id, f, l, `Parent of ${f} ${l}`, em, res, status]);
+      if (status === 'accepted') await q(`insert into admission_consents(tenant_id, application_id, method, reference) values ($1,$2,'paper_form','Signed admission form GW-ADM-2026-114 (demo)')`, [t.id, ap.id]);
+    }
     await audit(tx, null, t.id, 'demo.seed', 'tenant', t.id, null, { students: sIdx, guardians: guardianCount });
   });
   await seedOperations(db, t.id);

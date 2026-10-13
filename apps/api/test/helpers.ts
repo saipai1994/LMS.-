@@ -84,7 +84,7 @@ export async function schoolBase(app: INestApplication, adminToken: string, camp
   const admit = async (residence: 'boarder' | 'day_scholar', guardianEmail: string, first = 'Stu') => {
     n++;
     const ap = await post('/admissions', { campusId, academicYearId: year.id, gradeLevelId: grade.id, applicantFirstName: `${first}${n}`, applicantLastName: 'Test', applicantDob: '2012-01-01', guardianName: `Guardian ${n}`, guardianEmail, residencePreference: residence });
-    for (const to of ['under_review', 'offered', 'accepted']) await post(`/admissions/${ap.id}/transition`, { to });
+    for (const to of ['under_review', 'offered', 'accepted']) await post(`/admissions/${ap.id}/transition`, { to, ...(to === 'accepted' ? { consentRef: 'paper form (test)' } : {}) });
     return post(`/admissions/${ap.id}/enroll`, { sectionId: section.id, effectiveFrom: '2026-04-01' }) as Promise<{ studentId: string; parentInviteToken: string | null; admissionNo: string }>;
   };
   return { year, grade, section, post, admit };
