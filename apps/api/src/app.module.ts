@@ -37,11 +37,13 @@ import { ConsentsController } from './consents/consents.controller';
 import { AdvancedLearningController } from './lms/advanced.controller';
 import { ReportCardsController } from './reportcards/reportcards.controller';
 import { AccountingController } from './accounting/accounting.controller';
+import { AdminController } from './admin/admin.controller';
+import { PrivacyController } from './privacy/privacy.controller';
 import { ErrorFilter } from './common/errors.filter';
 
 @Global()
 @Module({
-  controllers: [AuthController, PlatformController, AcademicsController, AdmissionsController, StudentsController, UsersController, DemoController, HostelController, IncidentsController, AttendanceController, DismissalController, NotificationsController, FinanceController, LmsController, QuizController, GradesController, FilesController, DashboardController, TransportController, LibraryController, InventoryController, HrController, HealthController, SecurityController, CampusLifeController, CommsController, SchedulingController, ReportsController, HealthProbeController, LifecycleController, ConsentsController, AdvancedLearningController, ReportCardsController, AccountingController],
+  controllers: [AuthController, PlatformController, AcademicsController, AdmissionsController, StudentsController, UsersController, DemoController, HostelController, IncidentsController, AttendanceController, DismissalController, NotificationsController, FinanceController, LmsController, QuizController, GradesController, FilesController, DashboardController, TransportController, LibraryController, InventoryController, HrController, HealthController, SecurityController, CampusLifeController, CommsController, SchedulingController, ReportsController, HealthProbeController, LifecycleController, ConsentsController, AdvancedLearningController, ReportCardsController, AccountingController, AdminController, PrivacyController],
   providers: [DbService, AuthService, { provide: APP_GUARD, useClass: AuthGuard }, { provide: APP_FILTER, useClass: ErrorFilter }],
   exports: [DbService],
 })

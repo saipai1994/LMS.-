@@ -16,11 +16,12 @@ export const PERMISSIONS = [
   'reports.export',
   'students.promote', 'students.withdraw_approve', 'dismissal.approve', 'consents.manage',
   'accounting.manage', 'accounting.read', 'accounting.approve',
+  'privacy.manage',
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
 /** Permissions that make an account "privileged" and therefore require MFA. */
-export const PRIVILEGED: Permission[] = ['tenant.manage', 'campus.manage', 'user.manage', 'role.manage', 'audit.read', 'admissions.enroll', 'medical.read', 'medical.write', 'safeguarding.manage', 'finance.approve', 'finance.manage', 'inventory.approve', 'payroll.manage', 'payroll.approve', 'hr.manage', 'counselling.manage', 'accounting.manage', 'accounting.approve'];
+export const PRIVILEGED: Permission[] = ['tenant.manage', 'campus.manage', 'user.manage', 'role.manage', 'audit.read', 'admissions.enroll', 'medical.read', 'medical.write', 'safeguarding.manage', 'finance.approve', 'finance.manage', 'inventory.approve', 'payroll.manage', 'payroll.approve', 'hr.manage', 'counselling.manage', 'accounting.manage', 'accounting.approve', 'privacy.manage'];
 
 export interface SystemRole { key: string; name: string; permissions: Permission[] }
 const ALL = [...PERMISSIONS];
@@ -28,7 +29,7 @@ const ALL = [...PERMISSIONS];
 export const SYSTEM_ROLES: SystemRole[] = [
   { key: 'group_admin', name: 'School group administrator', permissions: ALL },
   { key: 'campus_admin', name: 'Campus administrator', permissions: ALL.filter((p) => p !== 'tenant.manage' && p !== 'safeguarding.manage' && p !== 'counselling.manage') },
-  { key: 'principal', name: 'Principal', permissions: ['academic.read', 'admissions.read', 'student.read', 'course.read_all', 'audit.read', 'hostel.read', 'incident.manage', 'attendance.read', 'finance.read', 'finance.approve', 'transport.read', 'inventory.read', 'inventory.approve', 'payroll.approve', 'hr.read', 'comms.manage', 'tickets.manage', 'meals.read', 'reports.export', 'students.promote', 'students.withdraw_approve', 'dismissal.approve', 'consents.manage', 'accounting.read', 'accounting.approve'] },
+  { key: 'principal', name: 'Principal', permissions: ['privacy.manage', 'academic.read', 'admissions.read', 'student.read', 'course.read_all', 'audit.read', 'hostel.read', 'incident.manage', 'attendance.read', 'finance.read', 'finance.approve', 'transport.read', 'inventory.read', 'inventory.approve', 'payroll.approve', 'hr.read', 'comms.manage', 'tickets.manage', 'meals.read', 'reports.export', 'students.promote', 'students.withdraw_approve', 'dismissal.approve', 'consents.manage', 'accounting.read', 'accounting.approve'] },
   { key: 'admissions_officer', name: 'Admissions officer', permissions: ['academic.read', 'admissions.read', 'admissions.write', 'admissions.decide', 'admissions.enroll', 'student.read'] },
   { key: 'registrar', name: 'Registrar', permissions: ['dismissal.approve', 'consents.manage', 'students.promote', 'reports.export', 'tickets.manage', 'comms.manage', 'academic.manage', 'academic.read', 'student.read', 'student.write', 'admissions.read', 'attendance.manage', 'attendance.read', 'grades.approve'] },
   { key: 'accountant', name: 'Accountant', permissions: ['accounting.manage', 'accounting.read', 'reports.export', 'student.read', 'finance.manage', 'finance.read', 'academic.read'] },
