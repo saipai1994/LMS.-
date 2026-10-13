@@ -1,4 +1,4 @@
-import { Body, Controller, Get, NotFoundException, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, NotFoundException, Param, Post, Put } from '@nestjs/common';
 import { z } from 'zod';
 import { DbService } from '../db/db.service';
 import { Auth, AuthContext, parse, needs, pid, uuid, campusScope } from '../common/http';
@@ -13,6 +13,19 @@ const course = z.object({ sectionId: uuid, subjectId: uuid, teacherUserId: uuid.
 @Controller()
 export class AcademicsController {
   constructor(private db: DbService) {}
+
+  /** Campus-level overrides (dismissal time, lateness thresholds, timezone). Inherits tenant defaults when unset. */
+  @Put('campuses/:id/settings')
+  campusSettings(@Auth() a: AuthContext, @Param('id') id: string, @Body() body: unknown) {
+    pid(id); needs(a, 'campus.manage', id);
+    const b = parse(z.object({ dismissalTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable().optional(), lateGraceMinutes: z.number().int().min(0).max(240).optional(), lateEscalateMinutes: z.number().int().min(1).max(480).optional(), timezone: z.string().regex(/^[A-Za-z_]+\/[A-Za-z_]+$/).optional() }), body);
+    return this.db.withTenant(a.tenantId, async (tx) => {
+      const r = await tx.query(`update campuses set settings = settings || $2::jsonb where id = $1 returning settings`, [id, JSON.stringify(Object.fromEntries(Object.entries(b).filter(([, v]) => v !== undefined)))]);
+      if (!r.rowCount) throw new NotFoundException({ error: 'not_found' });
+      await audit(tx, a, a.tenantId, 'campus.settings', 'campus', id, id, b as any);
+      return r.rows[0].settings;
+    });
+  }
 
   @Post('academic-years')
   createYear(@Auth() a: AuthContext, @Body() body: unknown) {

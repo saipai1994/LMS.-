@@ -1,4 +1,4 @@
-import { Body, ConflictException, Controller, ForbiddenException, Get, NotFoundException, Param, Post, UnprocessableEntityException } from '@nestjs/common';
+import { Body, ConflictException, Controller, ForbiddenException, Get, NotFoundException, Param, Post, Query, UnprocessableEntityException } from '@nestjs/common';
 import { z } from 'zod';
 import { DbService, Tx } from '../db/db.service';
 import { Auth, AuthContext, campusScope, can, needs, parse, pid, uuid } from '../common/http';
@@ -267,6 +267,76 @@ export class HostelController {
       }
       await audit(tx, a, a.tenantId, 'rollcall.record', 'roll_call', rc.id, h.campus_id, { session: b.session, unaccounted: unaccounted.length, conflicts: conflicts.length });
       return { id: rc.id, unaccounted, conflicts };
+    });
+  }
+
+  // ---------------- maintenance, inspections, vacation arrangements ----------------
+  @Post('hostel/maintenance')
+  reportIssue(@Auth() a: AuthContext, @Body() body: unknown) {
+    const b = parse(z.object({ hostelId: uuid, roomId: uuid.optional(), description: z.string().min(5).max(500), priority: z.enum(['low', 'normal', 'urgent']).default('normal') }), body);
+    return this.db.withTenant(a.tenantId, async (tx) => {
+      const h = await this.hostel(tx, b.hostelId); needs(a, 'hostel.read', h.campus_id);
+      if (b.roomId && !(await tx.query('select 1 from rooms where id = $1 and hostel_id = $2', [b.roomId, b.hostelId])).rowCount) throw new UnprocessableEntityException({ error: 'room_not_in_hostel' });
+      const r = (await tx.query('insert into maintenance_requests(tenant_id, hostel_id, room_id, description, priority, reported_by) values ($1,$2,$3,$4,$5,$6) returning id, status', [a.tenantId, b.hostelId, b.roomId ?? null, b.description, b.priority, a.userId])).rows[0];
+      await audit(tx, a, a.tenantId, 'hostel.maintenance_report', 'hostel', b.hostelId, h.campus_id, { priority: b.priority });
+      return r;
+    });
+  }
+  @Get('hostel/maintenance')
+  maintenance(@Auth() a: AuthContext) {
+    needs(a, 'hostel.read'); const scope = campusScope(a, 'hostel.read');
+    return this.db.withTenant(a.tenantId, async (tx) => (await tx.query(`select m.id, m.description, m.priority, m.status, m.assigned_to, m.created_at, h.name as hostel, r.number as room from maintenance_requests m join hostels h on h.id = m.hostel_id left join rooms r on r.id = m.room_id where ($1::uuid[] is null or h.campus_id = any($1)) order by (m.status = 'done'), case m.priority when 'urgent' then 0 when 'normal' then 1 else 2 end, m.created_at`, [scope])).rows);
+  }
+  @Post('hostel/maintenance/:id/update')
+  updateMaintenance(@Auth() a: AuthContext, @Param('id') id: string, @Body() body: unknown) {
+    pid(id); const b = parse(z.object({ status: z.enum(['assigned', 'done']), assignedTo: z.string().max(100).optional(), note: z.string().max(300).optional() }), body);
+    return this.db.withTenant(a.tenantId, async (tx) => {
+      const { rows: [m] } = await tx.query('select m.*, h.campus_id from maintenance_requests m join hostels h on h.id = m.hostel_id where m.id = $1 for update of m', [id]);
+      if (!m || !can(a, 'hostel.manage', m.campus_id)) throw new NotFoundException({ error: 'not_found' });
+      if (m.status === 'done') throw new ConflictException({ error: 'already_done' });
+      if (b.status === 'assigned' && !b.assignedTo) throw new UnprocessableEntityException({ error: 'assignee_required' });
+      await tx.query(`update maintenance_requests set status = $2, assigned_to = coalesce($3, assigned_to), done_note = $4, done_at = case when $2 = 'done' then now() end where id = $1`, [id, b.status, b.assignedTo ?? null, b.note ?? null]);
+      return { status: b.status };
+    });
+  }
+  @Post('hostels/rooms/:id/inspections')
+  inspect(@Auth() a: AuthContext, @Param('id') id: string, @Body() body: unknown) {
+    pid(id); const b = parse(z.object({ score: z.number().int().min(1).max(5), issues: z.string().max(500).optional() }), body);
+    return this.db.withTenant(a.tenantId, async (tx) => {
+      const { rows: [r] } = await tx.query('select r.*, h.campus_id from rooms r join hostels h on h.id = r.hostel_id where r.id = $1', [id]);
+      if (!r || !can(a, 'hostel.manage', r.campus_id)) throw new NotFoundException({ error: 'not_found' });
+      let mid: string | null = null;
+      if (b.score <= 2) {            // poor inspections automatically raise a maintenance request so they are not lost
+        mid = (await tx.query(`insert into maintenance_requests(tenant_id, hostel_id, room_id, description, priority, reported_by) values ($1,$2,$3,$4,'normal',$5) returning id`, [a.tenantId, r.hostel_id, id, `Inspection score ${b.score}/5: ${b.issues ?? 'see inspection'}`, a.userId])).rows[0].id;
+      }
+      const ins = (await tx.query('insert into room_inspections(tenant_id, room_id, inspected_by, score, issues, maintenance_request_id) values ($1,$2,$3,$4,$5,$6) returning id', [a.tenantId, id, a.userId, b.score, b.issues ?? null, mid])).rows[0];
+      return { ...ins, maintenanceRequestId: mid };
+    });
+  }
+  /** Rooms not inspected within the last N days. */
+  @Get('hostel/inspections/overdue')
+  overdueInspections(@Auth() a: AuthContext, @Query('days') days = '14') {
+    needs(a, 'hostel.read'); const scope = campusScope(a, 'hostel.read'); const d = Math.min(Math.max(parseInt(days) || 14, 1), 90);
+    return this.db.withTenant(a.tenantId, async (tx) => (await tx.query(`select h.name as hostel, r.number as room, (select max(inspected_on) from room_inspections i where i.room_id = r.id) as last_inspected from rooms r join hostels h on h.id = r.hostel_id where ($1::uuid[] is null or h.campus_id = any($1)) and not exists (select 1 from room_inspections i where i.room_id = r.id and i.inspected_on > current_date - $2::int) order by last_inspected nulls first, h.name, r.number`, [scope, d])).rows);
+  }
+  @Post('hostel/vacation-plans')
+  vacation(@Auth() a: AuthContext, @Body() body: unknown) {
+    const b = parse(z.object({ studentId: uuid, fromDate: z.string().date(), toDate: z.string().date(), arrangement: z.enum(['home', 'guardian', 'school_stay']), contact: z.string().min(3).max(200) }), body);
+    return this.db.withTenant(a.tenantId, async (tx) => {
+      const { rows: [s] } = await tx.query('select * from students where id = $1', [b.studentId]);
+      if (!s || !((await isGuardianOf(tx, a.userId, s.id)) || can(a, 'hostel.manage', s.campus_id))) throw new NotFoundException({ error: 'not_found' });
+      if (await currentResidence(tx, s.id) !== 'boarder') throw new UnprocessableEntityException({ error: 'student_not_boarder' });
+      const r = (await tx.query('insert into vacation_plans(tenant_id, student_id, from_date, to_date, arrangement, contact, recorded_by) values ($1,$2,$3,$4,$5,$6,$7) returning id', [a.tenantId, s.id, b.fromDate, b.toDate, b.arrangement, b.contact, a.userId])).rows[0];
+      return r;
+    });
+  }
+  /** Who is expected to stay on campus on a given vacation date. */
+  @Get('hostel/vacation-roster')
+  vacationRoster(@Auth() a: AuthContext, @Query('date') date: string) {
+    needs(a, 'hostel.read'); const d = parse(z.string().date(), date); const scope = campusScope(a, 'hostel.read');
+    return this.db.withTenant(a.tenantId, async (tx) => {
+      const boarders = (await tx.query(`select s.id, s.admission_no, s.first_name, s.last_name, v.arrangement, v.contact from students s join residence_assignments ra on ra.student_id = s.id and ra.effective_to is null and ra.residence_type = 'boarder' left join vacation_plans v on v.student_id = s.id and $1::date between v.from_date and v.to_date where s.status = 'active' and ($2::uuid[] is null or s.campus_id = any($2)) order by s.last_name`, [d, scope])).rows;
+      return { staying: boarders.filter((b) => b.arrangement === 'school_stay' || !b.arrangement).filter((b) => b.arrangement === 'school_stay'), noPlan: boarders.filter((b) => !b.arrangement), leaving: boarders.filter((b) => b.arrangement && b.arrangement !== 'school_stay') };
     });
   }
 
