@@ -8,6 +8,7 @@ import { hashPassword, sha256 } from '../common/crypto';
 import { SYSTEM_ROLES } from '../common/permissions';
 import { audit } from '../common/audit';
 import { seedOperations } from './seed-ops';
+import { seedOperations2 } from './seed-ops2';
 
 export const DEMO_SLUG = 'greenwood';
 export const DEMO_PASSWORD = 'Demo-Passw0rd!2026';
@@ -29,6 +30,8 @@ export async function seedDemo(db: DbService): Promise<SeedResult> {
   if (existing) {
     const done = await db.withTenant(existing.id, async (tx) => (await tx.query(`select 1 from audit_log where action = 'demo.seed.ops'`)).rowCount);
     if (!done) await seedOperations(db, existing.id); // completes an interrupted seed
+    const done2 = await db.withTenant(existing.id, async (tx) => (await tx.query(`select 1 from audit_log where action = 'demo.seed.ops2'`)).rowCount);
+    if (!done2) await seedOperations2(db, existing.id);
     return { created: false, ...(await counts(db, existing.id)) };
   }
   const pwHash = await hashPassword(DEMO_PASSWORD);
@@ -46,7 +49,7 @@ export async function seedDemo(db: DbService): Promise<SeedResult> {
     }
     await q(`insert into document_sequences(tenant_id, key, prefix, next_value) values ($1,'student_admission_no','GIA-',1)`, [t.id]);
 
-    const PRIV = new Set(['group_admin', 'campus_admin', 'principal', 'admissions_officer', 'nurse', 'accountant']);
+    const PRIV = new Set(['group_admin', 'campus_admin', 'principal', 'admissions_officer', 'nurse', 'accountant', 'hr_payroll', 'safeguarding_officer', 'exam_coordinator']);
     const addUser = async (email: string, name: string, role: string, withCampus: boolean) => {
       const [u] = await q(`insert into users(tenant_id, email, full_name, status, password_hash, mfa_secret, mfa_enabled) values ($1,$2,$3,'active',$4,$5,$6) returning id`,
         [t.id, email, name, pwHash, PRIV.has(role) ? DEMO_MFA_SECRET : null, PRIV.has(role)]);
@@ -61,7 +64,7 @@ export async function seedDemo(db: DbService): Promise<SeedResult> {
       ['teacher', 'Lakshmi Krishnan', 'teacher'], ['warden', 'Rakesh Thakur', 'warden'], ['transport', 'Imran Qureshi', 'transport'],
       ['nurse', 'Sister Grace Mathew', 'nurse'], ['librarian', 'Anita Deshpande', 'librarian'], ['inventory', 'Pradeep Kulkarni', 'inventory_manager'],
       ['registrar', 'Neha Bhatia', 'registrar'], ['campusadmin', 'Vikram Oberoi', 'campus_admin'],
-      ['gate', 'Bhaskar Singh', 'security_staff'], ['examcoord', 'Rita Fernandes', 'exam_coordinator'],
+      ['gate', 'Bhaskar Singh', 'security_staff'], ['examcoord', 'Rita Fernandes', 'exam_coordinator'], ['hr', 'Deepa Menon', 'hr_payroll'], ['kitchen', 'Chef Ramu Pillai', 'kitchen_manager'], ['safeguarding', 'Dr. Nandini Rao', 'safeguarding_officer'], ['lmsadmin', 'Kavita Joshi', 'lms_admin'],
     ];
     const teachers: string[] = [];
     let staffCount = 0;
@@ -165,6 +168,7 @@ export async function seedDemo(db: DbService): Promise<SeedResult> {
     await audit(tx, null, t.id, 'demo.seed', 'tenant', t.id, null, { students: sIdx, guardians: guardianCount });
   });
   await seedOperations(db, t.id);
+  await seedOperations2(db, t.id);
   return { created: true, ...(await counts(db, t.id)) };
 }
 

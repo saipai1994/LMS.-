@@ -168,3 +168,57 @@ describe('demo seed — operational modules', () => {
     expect(await scalar('select count(*)::int n from invoices')).toBe(before);
   });
 });
+
+describe('demo seed — phase 3 modules', () => {
+  it('meets volume targets and invariants', async () => {
+    const min: [string, number][] = [
+      ['select count(*)::int n from vehicles', 10], ['select count(*)::int n from transport_routes', 10], ['select count(*)::int n from books', 100], ['select count(*)::int n from loans', 40],
+      ['select count(*)::int n from inventory_items', 30], ['select count(*)::int n from staff_profiles', 60], ['select count(*)::int n from payslips', 60], ['select count(*)::int n from clinic_visits', 30],
+      ['select count(*)::int n from timetable_slots', 600], ['select count(*)::int n from activities', 10], ['select count(*)::int n from tickets', 8], ['select count(*)::int n from menus', 30], ['select count(*)::int n from exam_papers', 18],
+    ];
+    for (const [sql, n] of min) expect(await scalar(sql)).toBeGreaterThanOrEqual(n);
+    // no teacher teaches two sections in the same period, no room is double-booked, no section has two lessons in one period
+    expect(await scalar(`select count(*)::int n from (select t.day_of_week, t.period_id, c.teacher_user_id from timetable_slots t join courses c on c.id = t.course_id group by 1,2,3 having count(*) > 1) x`)).toBe(0);
+    expect(await scalar(`select count(*)::int n from (select day_of_week, period_id, room from timetable_slots where room is not null group by 1,2,3 having count(*) > 1) x`)).toBe(0);
+    expect(await scalar(`select count(*)::int n from transport_routes r where (select count(*) from student_transport st where st.route_id = r.id and st.effective_to is null) > (select capacity from vehicles v where v.id = r.vehicle_id)`)).toBe(0);
+    expect(await scalar(`select count(*)::int n from (select item_id from stock_movements group by item_id having sum(qty_delta) < 0) x`)).toBe(0);
+    expect(await scalar(`select count(*)::int n from book_copies c where c.status = 'issued' and not exists (select 1 from loans l where l.copy_id = c.id and l.returned_on is null)`)).toBe(0);
+    expect(await scalar(`select count(*)::int n from activities a where (select count(*) from activity_registrations r where r.activity_id = a.id and r.status = 'registered') > a.capacity`)).toBe(0);
+    expect(await scalar(`select count(*)::int n from payslips p where p.net_minor <> p.basic_minor + p.allowances_minor - p.deductions_minor - p.absence_deduction_minor`)).toBe(0);
+    expect(await scalar(`select count(*)::int n from trip_events d where d.event = 'dropped' and not exists (select 1 from trip_events b where b.trip_id = d.trip_id and b.student_id = d.student_id and b.event = 'boarded')`)).toBe(0);
+  });
+  it('role dashboards for transport, library, inventory, HR, health, kitchen and exams have data', async () => {
+    const tm = await demoLogin('transport');
+    const routes = (await http(app).get('/transport/routes').set(auth(tm)).expect(200)).body;
+    expect(routes).toHaveLength(10); expect(routes.every((r: any) => r.riders > 0 && r.riders <= 40)).toBe(true);
+    const al = (await http(app).get('/transport/alerts').set(auth(tm)).expect(200)).body;
+    expect(al.some((x: any) => x.expired)).toBe(true);
+    const lib = await demoLogin('librarian');
+    expect((await http(app).get('/library/overdue').set(auth(lib)).expect(200)).body.length).toBeGreaterThan(3);
+    const inv = await demoLogin('inventory');
+    expect((await http(app).get('/inventory/low-stock').set(auth(inv)).expect(200)).body.length).toBeGreaterThan(2);
+    expect((await http(app).get('/procurement/requisitions').set(auth(inv)).expect(200)).body.length).toBeGreaterThanOrEqual(5);
+    const hr = await demoLogin('hr', true);
+    expect((await http(app).get('/hr/staff').set(auth(hr)).expect(200)).body).toHaveLength(60);
+    expect((await http(app).get('/payroll/runs').set(auth(hr)).expect(200)).body[0]).toMatchObject({ status: 'paid', payslips: 60 });
+    const nurse = await demoLogin('nurse', true);
+    expect((await http(app).get('/health/medicine-alerts').set(auth(nurse)).expect(200)).body.length).toBeGreaterThan(1);
+    expect((await http(app).get('/counselling/referrals').set(auth(nurse)).expect(200)).body).toHaveLength(4);
+    const kitchen = await demoLogin('kitchen');
+    const today = new Date().toISOString().slice(0, 10);
+    const hc = (await http(app).get(`/meals/headcount?date=${today}&meal=lunch`).set(auth(kitchen)).expect(200)).body;
+    expect(hc.expected).toBeGreaterThan(70);
+    const parent = await demoLogin('parent');
+    const kids = (await http(app).get('/me/children').set(auth(parent)).expect(200)).body;
+    const rc = (await http(app).get(`/students/${kids[0].id}/report-card`).set(auth(parent)).expect(200)).body;
+    expect(rc.items.some((i: any) => i.assessment_name === 'Mid-term 2026')).toBe(true);
+    const teacherTok = await demoLogin('teacher');
+    const tt = (await http(app).get('/me/timetable').set(auth(teacherTok)).expect(200)).body;
+    expect(tt.length).toBeGreaterThan(5);
+    const sg = await demoLogin('safeguarding', true);
+    expect((await http(app).get('/incidents').set(auth(sg)).expect(200)).body.some((i: any) => i.category === 'safeguarding')).toBe(true);
+    const adminTok = await demoLogin('admin', true);
+    const exp = await http(app).get('/reports/students.csv').set(auth(adminTok)).expect(200);
+    expect(exp.text.split('\r\n').length).toBeGreaterThan(300);
+  });
+});
