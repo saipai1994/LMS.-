@@ -43,6 +43,7 @@ test('parent sees only linked children, their fees and homework; pays an invoice
   expect(a11y.violations.map((v) => `${v.id}: ${v.help}`)).toEqual([]);
   await page.goto('/finance');
   await expect(page.getByRole('heading', { name: 'Invoices for your children' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Pay (demo)' }).first()).toBeVisible();
   const before = await page.getByRole('button', { name: 'Pay (demo)' }).count();
   expect(before).toBeGreaterThan(0);
   await page.getByRole('button', { name: 'Pay (demo)' }).first().click();

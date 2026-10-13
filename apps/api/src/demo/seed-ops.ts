@@ -111,7 +111,8 @@ export async function seedOperations(db: DbService, tenantId: string): Promise<v
     // payments: TERM1 ~70% paid in full, ~15% half; TERM2 ~20% paid early. One payment per invoice.
     await q(`create temp table _pay on commit drop as
       select i.id as invoice_id, i.student_id, i.number, i.issue_date, i.total_minor,
-        (case when ${H("s.admission_no || i.batch_key")} < (case when i.batch_key = 'TERM1-2026' then 70 else 20 end) then i.total_minor
+        (case when s.admission_no in ('GIA-00001','GIA-00002') then 0   -- the demo parent's children keep open invoices so the pay flow is demonstrable
+              when ${H("s.admission_no || i.batch_key")} < (case when i.batch_key = 'TERM1-2026' then 70 else 20 end) then i.total_minor
               when i.batch_key = 'TERM1-2026' and ${H("s.admission_no || i.batch_key")} < 85 then i.total_minor / 2 else 0 end)::bigint as amount,
         (array['cash','bank_transfer','online_demo','cheque'])[1 + ${H("i.number", 4)}] as method,
         row_number() over (order by i.number) as rn

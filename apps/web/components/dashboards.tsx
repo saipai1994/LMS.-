@@ -1,8 +1,9 @@
 'use client';
 import Link from 'next/link';
-import { api, fmtDate, fmtDateTime, money } from '@/lib/api';
+import { useState } from 'react';
+import { api, fmtDate, fmtDateTime, money, setToken } from '@/lib/api';
 import { useAsync, useSession } from '@/lib/hooks';
-import { Async, BarSpark, Card, Empty, Stat, StatusBadge, Table } from './ui';
+import { Async, BarSpark, Button, Card, Empty, Stat, StatusBadge, Table, useAction } from './ui';
 
 export function Dashboard() {
   const s = useSession();
@@ -20,8 +21,9 @@ export function Dashboard() {
         : has('accountant') ? <Accountant />
         : has('admissions_officer') ? <Admissions />
         : has('security_staff') ? <Gate />
-        : has('nurse') ? <Nurse /> : <Generic />}
+        : has('nurse') ? <Nurse /> : has('transport') ? <TransportDash /> : has('librarian') ? <LibrarianDash /> : has('inventory_manager') ? <InventoryDash /> : has('hr_payroll') ? <HrDash /> : has('kitchen_manager') ? <KitchenDash /> : <Generic />}
       <Notices />
+      {s.can('tenant.manage') && <DemoReset />}
     </>
   );
 }
@@ -124,3 +126,48 @@ function Gate() {
   return <Async q={q} what="dismissal">{(d) => <div className="grid g4"><Stat label="Collected today" value={d.collected} tone="good" /><Stat label="Still on campus" value={d.pending} tone="warn" /></div>}</Async>;
 }
 function Nurse() { return <Card title="Health desk"><p>Search a student in <Link href="/students">Students</Link> to view restricted medical alerts. Every access is audited.</p></Card>; }
+
+function TransportDash() {
+  const q = useAsync(() => api<any[]>('/transport/routes'));
+  const al = useAsync(() => api<any[]>('/transport/alerts?days=30'));
+  return <div className="grid g2">
+    <Card title="Routes" action={<Link href="/transport">Open transport</Link>}><Async q={q} what="routes" empty={(d) => !d.length}>{(d) => <Table cols={[{ key: 'name', label: 'Route' }, { key: 'driver', label: 'Driver' }, { key: 'riders', label: 'Riders', render: (r) => `${r.riders}/${r.capacity}` }]} rows={d} />}</Async></Card>
+    <Card title="Expiring or expired documents"><Async q={al} what="alerts" empty={(d) => !d.length}>{(d) => <Table cols={[{ key: 'subject', label: 'Vehicle / driver' }, { key: 'doc', label: 'Document' }, { key: 'expires_on', label: 'Expires', render: (r) => fmtDate(r.expires_on) }, { key: 'expired', label: '', render: (r) => <StatusBadge s={r.expired ? 'overdue' : 'pending'} /> }]} rows={d} />}</Async></Card>
+  </div>;
+}
+function LibrarianDash() {
+  const q = useAsync(() => api<any[]>('/library/overdue'));
+  return <Card title="Overdue loans" action={<Link href="/library">Open library desk</Link>}><Async q={q} what="loans" empty={(d) => !d.length}>{(d) => <><div className="grid g4" style={{ marginBottom: '.75rem' }}><Stat label="Overdue items" value={d.length} tone="bad" /></div><Table cols={[{ key: 'title', label: 'Title' }, { key: 'n', label: 'Borrower', render: (r) => `${r.first_name} ${r.last_name}` }, { key: 'days_overdue', label: 'Days late' }, { key: 'fine_so_far_minor', label: 'Fine', align: 'right', render: (r) => money(r.fine_so_far_minor) }]} rows={d.slice(0, 10)} /></>}</Async></Card>;
+}
+function InventoryDash() {
+  const low = useAsync(() => api<any[]>('/inventory/low-stock'));
+  const reqs = useAsync(() => api<any[]>('/procurement/requisitions'));
+  return <div className="grid g2">
+    <Card title="Below reorder level" action={<Link href="/inventory">Open inventory</Link>}><Async q={low} what="stock" empty={(d) => !d.length}>{(d) => <Table cols={[{ key: 'name', label: 'Item' }, { key: 'on_hand', label: 'On hand' }, { key: 'reorder_level', label: 'Reorder at' }]} rows={d} />}</Async></Card>
+    <Card title="Requisitions"><Async q={reqs} what="requisitions" empty={(d) => !d.length}>{(d) => <Table cols={[{ key: 'number', label: 'No.' }, { key: 'justification', label: 'Purpose' }, { key: 'status', label: 'Status', render: (r) => <StatusBadge s={r.status} /> }]} rows={d.slice(0, 8)} />}</Async></Card>
+  </div>;
+}
+function HrDash() {
+  const docs = useAsync(() => api<any[]>('/hr/document-alerts'));
+  const leave = useAsync(() => api<any[]>('/hr/leave'));
+  const runs = useAsync(() => api<any[]>('/payroll/runs'));
+  return <div className="grid g2">
+    <Card title="Leave awaiting decision" action={<Link href="/hr">People & payroll</Link>}><Async q={leave} what="leave">{(d) => <Table cols={[{ key: 'full_name', label: 'Staff' }, { key: 'kind', label: 'Type' }, { key: 'from_date', label: 'From', render: (r) => fmtDate(r.from_date) }]} rows={d.filter((x) => x.status === 'requested')} empty="Nothing pending." />}</Async></Card>
+    <Card title="Expiring staff documents"><Async q={docs} what="documents" empty={(d) => !d.length}>{(d) => <Table cols={[{ key: 'full_name', label: 'Staff' }, { key: 'kind', label: 'Document' }, { key: 'expires_on', label: 'Expires', render: (r) => fmtDate(r.expires_on) }]} rows={d.slice(0, 8)} />}</Async></Card>
+    <Card title="Payroll"><Async q={runs} what="payroll" empty={(d) => !d.length}>{(d) => <Table cols={[{ key: 'month', label: 'Month' }, { key: 'payslips', label: 'Payslips' }, { key: 'total_net_minor', label: 'Net', align: 'right', render: (r) => money(r.total_net_minor) }, { key: 'status', label: 'Status', render: (r) => <StatusBadge s={r.status === 'paid' ? 'closed' : r.status === 'approved' ? 'approved' : 'draft'} /> }]} rows={d} />}</Async></Card>
+  </div>;
+}
+function KitchenDash() {
+  const today = new Date().toISOString().slice(0, 10);
+  const q = useAsync(() => api<any>(`/meals/headcount?date=${today}&meal=lunch`));
+  return <Card title="Today’s lunch" action={<Link href="/meals">Open meals</Link>}><Async q={q} what="headcount">{(d) => <><div className="grid g4"><Stat label="Expected" value={d.expected} /><Stat label="Served" value={d.served} tone="good" /><Stat label="Dietary alerts" value={d.allergenAlerts.length} tone={d.allergenAlerts.length ? 'bad' : 'good'} /></div><p>{d.menu ? d.menu.items : 'No menu set.'}</p></>}</Async></Card>;
+}
+
+function DemoReset() {
+  const info = useAsync(() => api<any>('/demo/info').catch(() => null));
+  const [confirm, setConfirm] = useState(false);
+  const act = useAction();
+  if (!info.data?.demo) return null;
+  return <Card title="Demo controls"><p className="sub">This build runs on fictional demo data. Resetting restores the original known state (all changes are lost, everyone is signed out).</p>
+    {!confirm ? <Button variant="secondary" onClick={() => setConfirm(true)}>Reset demo data…</Button> : <div className="row"><Button variant="danger" busy={act.busy} onClick={async () => { await act.run(async () => { await api('/demo/reset', { body: { confirm: 'RESET DEMO DATA' } }); setToken(null); location.href = '/login'; }, 'Reset complete.'); }}>Yes, wipe and reseed</Button><Button variant="secondary" onClick={() => setConfirm(false)}>Cancel</Button></div>}{act.node}</Card>;
+}

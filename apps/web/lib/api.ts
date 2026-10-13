@@ -28,3 +28,12 @@ export const errText = (e: unknown) => {
   if (e instanceof ApiError) return e.body?.issues ? `${e.body.error}: ${e.body.issues.map((i: any) => `${i.path} ${i.message}`).join('; ')}` : (e.body?.error ?? `Request failed (${e.status})`).replace(/_/g, ' ');
   return 'Network error — is the API running?';
 };
+
+/** Downloads an authenticated file (e.g. CSV) through the same-origin proxy. */
+export async function download(path: string, filename: string) {
+  const token = getToken();
+  const res = await fetch(`/api${path}`, { headers: token ? { authorization: `Bearer ${token}` } : {} });
+  if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => null));
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement('a'); a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url);
+}

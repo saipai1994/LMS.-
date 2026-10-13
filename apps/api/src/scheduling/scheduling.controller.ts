@@ -119,6 +119,9 @@ export class SchedulingController {
     needs(a, 'academic.manage'); const b = parse(examS, body);
     return this.db.withTenant(a.tenantId, async (tx) => (await tx.query('insert into exams(tenant_id, academic_year_id, name, starts_on, ends_on) values ($1,$2,$3,$4,$5) returning id, name', [a.tenantId, b.academicYearId, b.name, b.startsOn, b.endsOn])).rows[0]);
   }
+  @Get('exams')
+  listExams(@Auth() a: AuthContext) { return this.db.withTenant(a.tenantId, async (tx) => (await tx.query('select id, name, starts_on, ends_on from exams order by starts_on desc')).rows); }
+
   @Post('exams/:id/papers')
   addPaper(@Auth() a: AuthContext, @Param('id') id: string, @Body() body: unknown) {
     pid(id); needs(a, 'academic.manage'); const b = parse(paperS, body);

@@ -59,7 +59,8 @@ export class CampusLifeController {
          order by s.last_name`, [d, ml, scope])).rows;
       const menuTags: string[] = menu?.allergen_tags ?? [];
       const alerts = expected.filter((s) => (s.flags as string[]).some((f) => conflicts(f, menuTags))).map((s) => ({ studentId: s.id, name: `${s.first_name} ${s.last_name}`, admissionNo: s.admission_no, conflicts: (s.flags as string[]).filter((f) => conflicts(f, menuTags)) }));
-      return { menu: menu ? { items: menu.items, allergenTags: menuTags } : null, expected: expected.length, served: expected.filter((s) => s.served).length, allergenAlerts: alerts };
+      return { menu: menu ? { items: menu.items, allergenTags: menuTags } : null, expected: expected.length, served: expected.filter((s) => s.served).length, allergenAlerts: alerts,
+        students: expected.map((s) => ({ id: s.id, name: `${s.first_name} ${s.last_name}`, admissionNo: s.admission_no, flags: s.flags, served: s.served })) };
     });
   }
   @Post('meals/attendance')
