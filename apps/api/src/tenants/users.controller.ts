@@ -17,7 +17,7 @@ export class UsersController {
     needs(a, 'user.manage');
     const b = parse(createUser, body);
     return this.db.withTenant(a.tenantId, async (tx) => {
-      const { rows: [role] } = await tx.query('select id from roles where key = $1', [b.roleKey]);
+      const { rows: [role] } = await tx.query('select id from roles where key = $1 and tenant_id = $2', [b.roleKey, a.tenantId]);
       if (!role) throw new UnprocessableEntityException({ error: 'unknown_role' });
       // Only tenant-wide user managers may mint tenant-wide roles or grant on other campuses.
       needs(a, 'user.manage', b.campusId);
