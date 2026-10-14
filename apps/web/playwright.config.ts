@@ -11,7 +11,8 @@ export default defineConfig({
   retries: 0,
   reporter: [['list']],
   globalSetup: './e2e/global-setup.ts',
-  use: { baseURL: 'http://localhost:3100', trace: 'retain-on-failure', launchOptions: { executablePath: process.env.PW_CHROMIUM ?? '/opt/pw-browsers/chromium' } },
+  // Use Playwright's bundled browser by default; PW_CHROMIUM is an optional local override.
+  use: { baseURL: 'http://localhost:3100', trace: 'retain-on-failure', ...(process.env.PW_CHROMIUM ? { launchOptions: { executablePath: process.env.PW_CHROMIUM } } : {}) },
   webServer: [
     { command: 'npx ts-node src/main.ts', cwd: '../api', env: { ...process.env, ...env } as any, url: 'http://localhost:3001/demo/info', reuseExistingServer: false, timeout: 90_000 },
     { command: 'npx next start -p 3100', env: { ...process.env, API_URL: 'http://localhost:3001' } as any, url: 'http://localhost:3100/login', reuseExistingServer: false, timeout: 90_000 },
