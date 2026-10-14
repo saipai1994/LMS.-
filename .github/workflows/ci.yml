@@ -21,8 +21,16 @@ jobs:
       - run: npm run build
       - run: npm test
       - run: npm audit --omit=dev --audit-level=high
+
   web:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_USER: lms, POSTGRES_PASSWORD: lms_dev_pw, POSTGRES_DB: postgres }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U lms" --health-interval 5s --health-retries 10
     defaults: { run: { working-directory: apps/web } }
     steps:
       - uses: actions/checkout@v4
@@ -32,3 +40,12 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm audit --omit=dev --audit-level=high
+      - name: Install API dependencies for browser-test server
+        working-directory: apps/api
+        run: npm ci
+      - name: Create isolated browser-test database
+        run: psql 'postgres://lms:lms_dev_pw@localhost:5432/postgres' -v ON_ERROR_STOP=1 -c 'CREATE DATABASE lms_e2e'
+      - name: Install Chromium for Playwright
+        run: npx playwright install --with-deps chromium
+      - name: Run browser end-to-end and accessibility tests
+        run: npx playwright test
