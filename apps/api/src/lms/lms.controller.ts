@@ -53,10 +53,10 @@ export class LmsController {
   lessons(@Auth() a: AuthContext, @Param('id') id: string) {
     pid(id);
     return this.db.withTenant(a.tenantId, async (tx) => {
-      const { rows: [c] } = await tx.query('select c.*, s.campus_id from courses c join sections s on s.id = c.section_id where c.id = $1', [id]);
+      const { rows: [c] } = await tx.query('select c.*, s.campus_id from courses c join sections s on s.id = c.section_id where c.id = $1 and c.tenant_id = $2', [id, a.tenantId]);
       if (!c) throw new NotFoundException({ error: 'not_found' });
       const staff = c.teacher_user_id === a.userId || can(a, 'course.manage', c.campus_id);
-      if (staff) return (await tx.query('select l.*, (select coalesce(json_agg(file_id), \'[]\') from file_links where entity_id = l.id and entity_type = \'lesson\') as file_ids from lessons l where course_id = $1 order by position, created_at', [id])).rows;
+      if (staff) return (await tx.query('select l.*, (select coalesce(json_agg(file_id), \'[]\') from file_links where entity_id = l.id and entity_type = \'lesson\') as file_ids from lessons l where course_id = $1 and tenant_id = $2 order by position, created_at', [id, a.tenantId])).rows;
       const { student } = await studentCourse(tx, a, id);
       const rows = (await tx.query(
         `select l.id, l.unit, l.title, l.position, l.release_at, l.body, l.external_url, l.prerequisite_lesson_id,
@@ -65,7 +65,7 @@ export class LmsController {
            (l.prerequisite_lesson_id is not null and not exists (select 1 from lesson_progress p where p.lesson_id = l.prerequisite_lesson_id and p.student_id = $2)) as prerequisite_pending,
            (select coalesce(json_agg(file_id), '[]') from file_links where entity_id = l.id and entity_type = 'lesson') as file_ids
          from lessons l left join lesson_progress lp on lp.lesson_id = l.id and lp.student_id = $2
-         where l.course_id = $1 and l.published order by l.position, l.created_at`, [id, student.id])).rows;
+         where l.course_id = $1 and l.tenant_id = $3 and l.published order by l.position, l.created_at`, [id, student.id, a.tenantId])).rows;
       return rows.map((r) => {
         const locked = r.not_yet_released || r.prerequisite_pending;
         return locked ? { id: r.id, unit: r.unit, title: r.title, locked: true, reason: r.not_yet_released ? 'not_yet_released' : 'prerequisite_pending', release_at: r.release_at }
