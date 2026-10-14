@@ -1,0 +1,14 @@
+services:
+  app:
+    image: mcr.microsoft.com/devcontainers/javascript-node:22
+    volumes: ["..:/workspace:cached"]
+    command: sleep infinity
+    environment:
+      DATABASE_URL: postgres://lms:lms_dev_pw@db:5432/lms
+      DEMO_MODE: "true"
+      PLATFORM_BOOTSTRAP_TOKEN: codespaces-demo-bootstrap-token-0123456789
+      API_URL: http://localhost:3001
+    depends_on: [db]
+  db:
+    image: postgres:16
+    environment: { POSTGRES_USER: lms, POSTGRES_PASSWORD: lms_dev_pw, POSTGRES_DB: lms }

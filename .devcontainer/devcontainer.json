@@ -1,0 +1,10 @@
+{
+  "name": "LMS demo",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspace",
+  "forwardPorts": [3000, 3001],
+  "portsAttributes": { "3000": { "label": "Web (open this)", "onAutoForward": "openBrowser" }, "3001": { "label": "API" } },
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+  "postStartCommand": "bash .devcontainer/start.sh"
+}
