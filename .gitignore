@@ -10,3 +10,8 @@ test-results/
 playwright-report/
 *.tsbuildinfo
 next-env.d.ts
+
+prospector/.venv/
+prospector/*.sqlite3
+__pycache__/
+.pytest_cache/
