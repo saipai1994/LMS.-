@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Prospector</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#14181f;--mut:#5c6675;--line:#e2e6ec;--acc:#2554d6;--hot:#c4361f;--warm:#b7791f;--cold:#5c6675;--ok:#1b7f4b}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1218;--card:#181c24;--ink:#e8ebf0;--mut:#9aa4b2;--line:#2a303b;--acc:#6f95ff;--hot:#ff7a63;--warm:#f0b64c;--cold:#9aa4b2;--ok:#4cc38a}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,sans-serif}
+header{padding:16px;border-bottom:1px solid var(--line);background:var(--card);display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+h1{font-size:18px;margin:0}main{max-width:1100px;margin:0 auto;padding:16px}
+.banner{background:#fff4d6;color:#5a4300;border:1px solid #e8cf85;padding:8px 12px;border-radius:8px;margin-bottom:12px}
+.tabs{display:flex;gap:6px;margin:0 0 12px}.tabs button{padding:8px 14px}.tabs .on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}label{display:flex;flex-direction:column;font-size:12px;color:var(--mut);gap:3px}
+input,select,button{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--card);color:var(--ink)}
+button{cursor:pointer}button.p{background:var(--acc);color:#fff;border-color:var(--acc)}button:disabled{opacity:.5}
+.score{display:inline-block;min-width:44px;text-align:center;font-weight:700;border-radius:6px;padding:2px 8px;color:#fff}
+.hot{background:var(--hot)}.warm{background:var(--warm)}.cold{background:var(--cold)}
+.mut{color:var(--mut);font-size:13px}.pill{font-size:12px;border:1px solid var(--line);border-radius:99px;padding:1px 8px;margin-right:4px;display:inline-block}
+table{width:100%;border-collapse:collapse;margin-top:8px}td,th{text-align:left;padding:6px 8px;border-top:1px solid var(--line);font-size:14px;vertical-align:top}
+ul{margin:6px 0 6px 18px;padding:0}.flag{color:var(--warm)}.err{color:var(--hot)}.ok{color:var(--ok)}
+.top{display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap}
+</style></head><body>
+<header><h1>Prospector</h1><span class="mut" id="prov"></span></header>
+<main>
+<div id="banner"></div>
+<div class="tabs"><button id="t1" class="on">Find customers</button><button id="t2">LinkedIn lookup</button></div>
+
+<section id="s1">
+ <div class="card"><div class="row">
+  <label>Selling<select id="pb"></select></label>
+  <label>Countries (comma)<input id="co" placeholder="India, United Arab Emirates"></label>
+  <label>Min employees<input id="mn" type="number" style="width:110px"></label>
+  <label>Max employees<input id="mx" type="number" style="width:110px"></label>
+  <label>Min score<input id="ms" type="number" value="0" style="width:90px"></label>
+  <button class="p" id="go">Search</button><button id="exp" disabled>Export CSV</button>
+ </div><div class="mut" id="pitch" style="margin-top:8px"></div></div>
+ <div id="msg"></div><div id="res"></div>
+</section>
+
+<section id="s2" hidden>
+ <div class="card"><div class="row">
+  <label style="flex:1;min-width:260px">LinkedIn URL (person or company)<input id="url" placeholder="https://www.linkedin.com/in/…"></label>
+  <label>Score against<select id="pb2"></select></label>
+  <button class="p" id="lk">Look up</button></div>
+  <div class="mut" style="margin-top:8px">The URL is used only as a key into your licensed data providers. Nothing is scraped from LinkedIn.</div></div>
+ <div id="msg2"></div><div id="res2"></div>
+</section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let meta,leads=[];
+const cls=n=>n>=60?'hot':n>=35?'warm':'cold';
+async function api(path,body){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+ if(!r.ok){let d='';try{d=(await r.json()).detail}catch{}throw new Error(d||r.statusText)}return r}
+function contact(p){return `<span data-c>${p.email?`<span class="${p.email_status==='verified'?'ok':''}">${esc(p.email)}</span> <span class="mut">(${esc(p.email_status||'?')})</span>`:'<span class="mut">email: –</span>'}
+ ${p.phone?` · ${esc(p.phone)} <span class="mut">${esc(p.phone_type)}</span>`:''}</span>`}
+function peopleTable(ps,pbid,li){return ps.length?`<table><tr><th>Decision maker</th><th>Role in deal</th><th>Contact</th><th></th></tr>`+
+ ps.map((p,i)=>`<tr><td><b>${esc(p.name)}</b><br><span class="mut">${esc(p.title)}</span>${p.linkedin_url?` · <a href="${esc(p.linkedin_url)}" target="_blank" rel="noopener">in</a>`:''}</td>
+ <td>${esc(p.persona_label||'–')}</td><td>${contact(p)}</td><td>${p.email||p.phone?'':`<button data-rev="${li}:${i}">Reveal</button>`}</td></tr>`).join('')+`</table>`:'<div class="mut">No matching decision makers found.</div>'}
+function leadHtml(l,i){const s=l.score,c=l.company;
+ return `<div class="card"><div class="top"><div><b>${esc(c.name)}</b> <span class="mut">${esc(c.domain)} · ${esc(c.industry)} · ${esc(c.country)} · ${c.employees?c.employees.toLocaleString()+' staff':''}</span></div>
+ <div><span class="score ${cls(s.total)}" title="fit ${s.fit} / intent ${s.intent}">${s.total}</span> <span class="mut">${esc(s.stage)}</span></div></div>
+ <div class="mut">Fit ${s.fit} · Intent ${s.intent}${c.tech.length?' · Stack: '+c.tech.map(esc).join(', '):''}</div>
+ ${s.flags.map(f=>`<div class="flag">⚑ ${esc(f)}</div>`).join('')}
+ <details><summary>Why this score (${s.reasons.length})</summary><ul>${s.reasons.map(r=>`<li>${esc(r)}</li>`).join('')}</ul></details>
+ ${peopleTable(l.people,'',i)}</div>`}
+async function init(){meta=await (await fetch('/api/meta')).json();
+ $('prov').textContent='Providers: '+meta.providers.join(' → ');
+ if(meta.demo_only)$('banner').innerHTML='<div class="banner"><b>Demo data.</b> Companies, people, emails and phones are fictional. Set <code>PROVIDERS</code> and API keys to use real data.</div>';
+ for(const id of ['pb','pb2'])$(id).innerHTML=(id==='pb2'?'<option value="">(none)</option>':'')+meta.playbooks.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
+ pbChange();}
+function pbChange(){const p=meta.playbooks.find(x=>x.id===$('pb').value);$('pitch').textContent=p.pitch;$('mn').placeholder=p.emp_min;$('mx').placeholder=p.emp_max}
+$('pb').onchange=pbChange;
+$('t1').onclick=()=>tab(1);$('t2').onclick=()=>tab(2);
+function tab(n){$('s1').hidden=n!==1;$('s2').hidden=n!==2;$('t1').className=n===1?'on':'';$('t2').className=n===2?'on':''}
+$('go').onclick=async()=>{$('go').disabled=true;$('msg').textContent='Searching…';$('res').innerHTML='';
+ try{const co=$('co').value.split(',').map(s=>s.trim()).filter(Boolean);
+  const d=await (await api('/api/search',{playbook:$('pb').value,countries:co,min_employees:+$('mn').value||null,max_employees:+$('mx').value||null,min_score:+$('ms').value||0,limit:25})).json();
+  leads=d.leads;$('msg').innerHTML=`${leads.length} leads, ranked by fit × intent`+d.warnings.map(w=>`<div class="err">${esc(w)}</div>`).join('');
+  $('res').innerHTML=leads.map(leadHtml).join('');$('exp').disabled=!leads.length}catch(e){$('msg').innerHTML=`<span class="err">${esc(e.message)}</span>`}$('go').disabled=false};
+$('res').onclick=async e=>{const b=e.target.closest('[data-rev]');if(!b)return;const[li,pi]=b.dataset.rev.split(':').map(Number);
+ b.disabled=true;b.textContent='…';try{const d=await (await api('/api/reveal',{playbook:$('pb').value,person:leads[li].people[pi]})).json();
+ leads[li].people[pi]=d.person;$('res').innerHTML=leads.map(leadHtml).join('')}catch(err){b.textContent='Error';b.title=err.message}};
+$('exp').onclick=async()=>{const r=await api('/api/export.csv',{leads});const u=URL.createObjectURL(await r.blob());const a=document.createElement('a');a.href=u;a.download='leads.csv';a.click()};
+$('lk').onclick=async()=>{$('lk').disabled=true;$('msg2').textContent='Looking up…';$('res2').innerHTML='';
+ try{const d=await (await api('/api/lookup',{url:$('url').value,playbook:$('pb2').value})).json();$('msg2').innerHTML=d.warnings.map(w=>`<div class="err">${esc(w)}</div>`).join('');
+  let h='';if(d.person)h+=`<div class="card"><b>${esc(d.person.name)}</b> <span class="mut">${esc(d.person.title)} · ${esc(d.person.company_name)}</span>
+   ${d.person.persona_label?`<span class="pill">${esc(d.person.persona_label)}</span>`:''}<div>${contact(d.person)}</div><div class="mut">Sources: ${(d.person.sources||[]).map(esc).join(', ')||'–'}</div></div>`;
+  if(d.company){const s=d.score;h+=`<div class="card"><b>${esc(d.company.name)}</b> <span class="mut">${esc(d.company.domain)} · ${esc(d.company.industry)} · ${esc(d.company.country)}</span>
+   ${s?` <span class="score ${cls(s.total)}">${s.total}</span> <span class="mut">${esc(s.stage)}</span><ul>${s.reasons.map(r=>`<li>${esc(r)}</li>`).join('')}</ul>`:'<div class="mut">Pick a product above to score intent.</div>'}</div>`}
+  if(d.colleagues.length)h+=`<div class="card"><b>Other decision makers here</b>${peopleTable(d.colleagues,'',0)}</div>`;
+  $('res2').innerHTML=h}catch(e){$('msg2').innerHTML=`<span class="err">${esc(e.message)}</span>`}$('lk').disabled=false};
+init();
+</script></body></html>
